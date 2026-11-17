@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>Local capability checks</title>
+<p>Testing local worker, media, call, and storage paths.</p>
+<script type="module">
+const checks={};
+const limit=(promise,ms=5500)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error('timeout')),ms))]);
+async function check(name,fn){try{checks[name]=await limit(fn())}catch(e){checks[name]=String(e)}}
+await check('dedicatedWorker',async()=>{const w=new Worker('/dedicated.js');try{return await new Promise(ok=>w.onmessage=e=>ok(e.data))}finally{w.terminate()}});
+await check('serviceWorker',async()=>{const reg=await navigator.serviceWorker.register('/service.js');
+  try{await navigator.serviceWorker.ready;const ch=new MessageChannel();
+    reg.active.postMessage('fetch-controls',[ch.port2]);return await new Promise(ok=>ch.port1.onmessage=e=>ok(e.data));
+  }finally{await reg.unregister()}});
+await check('localMedia',async()=>{
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+  const stream=canvas.captureStream(12),video=document.createElement('video');video.muted=true;video.srcObject=stream;
+  const timer=setInterval(()=>{ctx.fillStyle='#435b46';ctx.fillRect(0,0,32,32)},30);
+  try{await video.play();await new Promise(ok=>video.requestVideoFrameCallback(ok));return video.videoWidth>0}
+  finally{clearInterval(timer);stream.getTracks().forEach(t=>t.stop());video.srcObject=null;}
+});
+await check('loopbackCall',async()=>{
+  const a=new RTCPeerConnection({iceServers:[]}),b=new RTCPeerConnection({iceServers:[]});
+  const exchange=(src,dst)=>{const pending=[];src.onicecandidate=({candidate})=>{
+    if(candidate){if(dst.remoteDescription)dst.addIceCandidate(candidate).catch(()=>{});else pending.push(candidate)}};
+    return async()=>{for(const c of pending)await dst.addIceCandidate(c);};};
+  const ab=exchange(a,b),ba=exchange(b,a);const channel=a.createDataChannel('local');
+  const pong=new Promise(ok=>{b.ondatachannel=({channel})=>channel.onmessage=e=>channel.send(e.data);channel.onmessage=e=>ok(e.data);});
+  try{await a.setLocalDescription(await a.createOffer());await b.setRemoteDescription(a.localDescription);await ab();
+    await b.setLocalDescription(await b.createAnswer());await a.setRemoteDescription(b.localDescription);await ba();
+    channel.onopen=()=>channel.send('roundtrip');return await limit(pong,4000);
+  }finally{a.close();b.close();}
+});
+const data=new URLSearchParams({run:'capabilities',checks:JSON.stringify(checks)});
+await fetch('/report?'+data);
+</script>

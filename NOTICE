@@ -1,0 +1,13 @@
+Sisu for macOS
+Copyright 2026 Sisu and Desktop Browser contributors
+
+Original project code is licensed under the Apache License, Version 2.0.
+This project reuses Rust browser policy, import parsers and pinned rule inputs
+from https://github.com/gurusciuc/sisu under that license. The native AppKit
+interface and WebKit integration are original Sisu code.
+
+System WebKit is supplied by macOS, under Apple's applicable system terms.
+Brave Software and contributors maintain adblock-rust under MPL-2.0.
+The EasyList authors (https://easylist.to/) maintain EasyList and EasyPrivacy;
+their data and converted representations retain CC BY-SA 3.0.
+See THIRD_PARTY.md and notices/ for upstream licenses and attribution.

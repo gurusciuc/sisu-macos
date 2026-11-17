@@ -1,0 +1,4 @@
+! Loopback-only regression cases, included for reproducible audits.
+/probe-ad.js$script,domain=localhost
+@@/probe-ad.js?allowed$script,domain=localhost
+localhost##.fixture-ad

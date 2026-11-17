@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Reading desk</title><style>
+:root{font:17px/1.55 "Helvetica Neue",Helvetica,Arial,sans-serif;color:#24312e;background:#f7f7f1}main{max-width:48rem;margin:3rem auto;padding:0 2rem}
+h1{font:500 3rem/1.1 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.045em;margin:.4em 0} h2{font-size:1.2rem}
+textarea{display:block;box-sizing:border-box;width:100%;min-height:6rem;font:inherit;padding:.6rem}
+article{border-top:1px solid #bac4bd;margin-top:1.5rem}iframe{width:100%;height:3rem;border:1px solid #c8cfc7}
+</style>
+<main><h1>Reading desk</h1><p>A local reading and editing fixture.</p>
+<label for="draft">Draft</label><textarea id="draft" placeholder="Write a note"></textarea>
+<article><h2>Field notes</h2><p>The path follows the river through a stand of beech trees. The field team records water levels before returning to the station.</p></article>
+<div class="fixture-ad">Cosmetic filter control</div><p id="status" aria-live="polite"></p>
+<details><summary>Form and frame</summary><form onsubmit="event.preventDefault()"><label>Test username <input autocomplete="username"></label>
+<label>Test password <input type="password" autocomplete="current-password"></label><button>Submit locally</button></form>
+<iframe title="Nested form" src="/subframe"></iframe></details>
+<a href="/second?run=second">Open second document</a></main>
+<script src="/control.js"></script><script src="/probe-ad.js?direct"></script><script src="/probe-ad.js?allowed"></script>
+<script src="/bounce"></script><script src="/ads/!rotator/control.js"></script>
+<script>
+const run=new URLSearchParams(location.search).get('run')||'manual';
+const documentId=crypto.randomUUID();
+const prior=localStorage.getItem('marker')||'empty';
+localStorage.setItem('marker',run);
+const cookieBefore=document.cookie;
+document.cookie='fixture='+encodeURIComponent(run)+'; Path=/; SameSite=Strict; Max-Age=300';
+const draft=document.querySelector('textarea');
+if(run.startsWith('tab-')) {document.title=run; draft.value='Unsubmitted note '+documentId;}
+function report() {
+  const result=new URLSearchParams({run,documentId,prior,cookieBefore,
+    draft:draft.value,control:String(globalThis.allowedControl===true),
+    hidden:String(getComputedStyle(document.querySelector('.fixture-ad')).display==='none'),
+    width:innerWidth,height:innerHeight,scale:devicePixelRatio,
+    extension:document.documentElement.dataset.fixtureExtension||'',isolated:String(!globalThis.fixtureIsolatedMarker),visibility:document.visibilityState,
+    topology:document.documentElement.dataset.fixtureTopology||'',
+    firstPaint:String(performance.getEntriesByName('first-contentful-paint')[0]?.startTime||0)});
+  fetch('/report?'+result,{cache:'no-store'}).catch(()=>{});
+}
+draft.addEventListener('input',report);
+addEventListener('resize',report);
+document.addEventListener('visibilitychange',report);
+document.addEventListener('fixture-response',report);
+addEventListener('load',()=>{setTimeout(report,350);setTimeout(report,1500)});
+</script></html>
