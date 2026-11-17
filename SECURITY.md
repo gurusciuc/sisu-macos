@@ -1,7 +1,7 @@
 # Security reporting and engine maintenance
 
-Use the repository's private vulnerability reporting form for security disclosures. Include the affected build, OS, engine version, observable impact and a minimal controlled reproduction. Remove personal profile data, passwords, browsing history and tokens. [Report a vulnerability privately](https://github.com/gurusciuc/sisu/security/advisories/new)
+Do not post passwords, browser profiles, browsing history, cookies or tokens in public issues. If private vulnerability reporting is enabled in this repository's Security tab, use it to disclose a minimal controlled reproduction privately. If that channel is unavailable, request a private contact channel without publishing the vulnerability details.
 
-For an upstream Chromium or CEF issue, follow the upstream project's disclosure process. [Chromium security](https://www.chromium.org/Home/chromium-security/reporting-security-bugs/) · [CEF project](https://github.com/chromiumembedded/cef)
+WebKit is supplied and security-updated by macOS. Follow Apple's security disclosure process for upstream WebKit issues and keep the supported OS versions current. Track Rust dependency advisories, verify pinned filter input hashes and repeat native acceptance after intentional updates.
 
-Every runtime release requires tracking supported upstream branches, checking advisories, verifying archive provenance and hashes, updating matching Rust bindings and sandbox bootstrap, and repeating platform and compatibility checks. Document any local engine patches, their upstream status and their security owner. A pinned prototype receives fixes when rebuilt and redistributed. There is no deployed automatic updater.
+This alpha has no automatic updater. Developer ID signing, notarization, verified updates and enabling a confirmed private reporting channel are production release gates.

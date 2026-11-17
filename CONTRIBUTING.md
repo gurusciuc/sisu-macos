@@ -6,4 +6,4 @@ For a change to navigation, permissions, storage, extension handling, tab layout
 
 Run `cargo fmt --all -- --check` and the Rust and browser-driven checks in README.md. Keep Cargo.lock and pinned filter-list digests in sync with intentional upgrades. Regenerate the locked dependency notices after dependency changes. Use the release baseline only with equivalent workloads.
 
-AI coding assistants should start with AGENTS.md and the plan alignment audit. Use GitHub issues for ordinary bug reports and SECURITY.md for private disclosures.
+AI coding assistants should start with AGENTS.md and docs/checkpoint.md. Use GitHub issues for ordinary bug reports and SECURITY.md for private disclosures.
