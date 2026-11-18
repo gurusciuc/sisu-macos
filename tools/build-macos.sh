@@ -15,7 +15,7 @@ app="$stage/Sisu WebKit Preview.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 "$target/release/webkit-rules" "$app/Contents/Resources"
 sdk=$(xcrun --sdk macosx --show-sdk-path)
-xcrun swiftc -O -whole-module-optimization -swift-version 5 -sdk "$sdk" -target "$(uname -m)-apple-macos14.0" -module-cache-path "$stage/modules" -import-objc-header native/macos/Core.h -framework AppKit -framework WebKit -framework Security -framework SystemConfiguration -framework CoreFoundation -lresolv -Xlinker -dead_strip native/macos/Platform.swift native/macos/BrowserWindow.swift native/macos/main.swift "$target/release/libsisu_core.a" -o "$app/Contents/MacOS/sisu-webkit"
+xcrun swiftc -O -whole-module-optimization -swift-version 5 -sdk "$sdk" -target "$(uname -m)-apple-macos14.0" -module-cache-path "$target/swift-modules" -import-objc-header native/macos/Core.h -framework AppKit -framework WebKit -framework Security -framework SystemConfiguration -framework CoreFoundation -lresolv -Xlinker -dead_strip native/macos/*.swift "$target/release/libsisu_core.a" -o "$app/Contents/MacOS/sisu-webkit"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

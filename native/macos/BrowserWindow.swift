@@ -12,32 +12,47 @@ import WebKit
 }
 
 @MainActor final class TabChip: Surface {
-    let select: NSButton
-    let close: NSButton
-    var active = false
+    let select: ChromeButton
+    let close: ChromeButton
+    private let icon = NSImageView()
+    var onSelect: (() -> Void)?
+    var active = false { didSet { close.isHidden = !active; needsDisplay = true } }
     var middleClose: (() -> Void)?
     init(id: Int, target: BrowserWindow) {
-        select = NSButton(title: "New Tab", target: target, action: #selector(BrowserWindow.selectTab(_:)))
-        close = iconButton("xmark", label: "Close tab", target: target, action: #selector(BrowserWindow.closeTab(_:)))
+        select = ChromeButton(title: "New Tab", target: target, action: #selector(BrowserWindow.selectTab(_:)))
+        close = ChromeButton(symbol: .close, target: target, action: #selector(BrowserWindow.closeTab(_:)))
         super.init(frame: .zero)
         select.tag = id; close.tag = id
-        select.isBordered = false; select.alignment = .left
-        select.font = NSFont(name: "Helvetica Neue", size: 12)
+        select.alignment = .left; select.font = NSFont(name: "Arial", size: 13); select.hoverEnabled = false
         select.lineBreakMode = .byTruncatingTail
-        addSubview(select); addSubview(close)
+        close.setAccessibilityLabel("Close tab"); close.toolTip = "Close tab"
+        icon.image = chromeImage(.page); icon.imageScaling = .scaleNone
+        addSubview(icon); addSubview(select); addSubview(close)
+        onSelect = { [weak target] in target?.select(id) }
         middleClose = { [weak target] in target?.requestClose(id) }
+        select.onMiddleClick = middleClose; close.onMiddleClick = middleClose
     }
     required init?(coder: NSCoder) { fatalError() }
-    override func layout() { super.layout(); select.frame = NSRect(x: 10, y: 0, width: max(0, bounds.width-43), height: bounds.height); close.frame = NSRect(x: bounds.width-31, y: 2, width: 28, height: bounds.height-4) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === icon ? self : hit
+    }
+    override func mouseDown(with event: NSEvent) { onSelect?() }
+    override func layout() {
+        super.layout()
+        icon.frame = NSRect(x: 10, y: 8, width: 16, height: 18)
+        select.frame = NSRect(x: 32, y: 0, width: max(0, bounds.width-63), height: bounds.height)
+        close.frame = NSRect(x: bounds.width-30, y: 5, width: 24, height: 24)
+    }
     override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { middleClose?() } else { super.otherMouseDown(with: event) } }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         if active {
-            let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
-            Palette.field(self).setFill(); shape.fill(); Palette.line(self).setStroke(); shape.lineWidth = 1; shape.stroke()
+            let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
+            Palette.tab(self).setFill(); shape.fill(); Palette.tabBorder(self).setStroke(); shape.lineWidth = 1; shape.stroke()
         }
-        select.contentTintColor = active ? Palette.text(self) : Palette.muted(self)
-        close.contentTintColor = Palette.muted(self)
+        icon.contentTintColor = active ? Palette.text(self) : Palette.muted(self)
     }
 }
 
@@ -46,76 +61,96 @@ import WebKit
     let profile: Profile
     var tabs: [Int: BrowserTab] = [:]
     private let root = Surface()
+    private let tabHeader = DragSurface()
     private let tabScroll = NSScrollView()
     private let tabDocument = Surface()
     private let toolbar = Surface()
     private let pages = Surface()
-    private let address = NSTextField()
+    private let address = RoundedField()
     private var chips: [Int: TabChip] = [:]
-    private var buttons: [NSButton] = []
-    private var boundsObserver: NSObjectProtocol?
+    private var buttons: [ChromeButton] = []
+    private var blockingButton: ChromeButton!
+    private let headerWordmark = NSTextField(labelWithString: "sisu")
+    private var frameObservers: [NSObjectProtocol] = []
     private var downloads: [ObjectIdentifier: WKDownload] = [:]
     private var allowWindowClose = false
     var current: BrowserTab? { core.selected.flatMap { tabs[$0] } }
 
     init(profile: Profile) {
         self.profile = profile
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init(window: window)
         window.title = profile.isPrivate ? "Sisu · Private" : "Sisu"
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
+        window.tabbingMode = .disallowed
         window.minSize = NSSize(width: 680, height: 460)
         window.delegate = self; window.contentView = root
         window.isReleasedWhenClosed = false
         tabScroll.documentView = tabDocument; tabScroll.drawsBackground = false
         tabScroll.hasVerticalScroller = false; tabScroll.hasHorizontalScroller = false
         tabScroll.autohidesScrollers = true
-        root.addSubview(tabScroll); root.addSubview(toolbar); root.addSubview(pages)
+        // Keep browser controls in the content view below AppKit's title bar.
+        tabHeader.addSubview(tabScroll)
+        root.addSubview(tabHeader); root.addSubview(toolbar); root.addSubview(pages)
         address.placeholderString = "Search or enter address"
-        address.font = NSFont(name: "Helvetica Neue", size: 14)
-        address.focusRingType = .none; address.bezelStyle = .roundedBezel
+        address.font = NSFont(name: "Arial", size: 15)
+        address.focusRingType = .none
         address.target = self; address.action = #selector(commitAddress)
         address.setAccessibilityLabel("Address and search")
         toolbar.addSubview(address)
+        func button(_ symbol: ChromeSymbol, _ label: String, _ action: Selector) -> ChromeButton {
+            let value = ChromeButton(symbol: symbol, target: self, action: action)
+            value.toolTip = label; value.setAccessibilityLabel(label); return value
+        }
         buttons = [
-            iconButton("chevron.left", label: "Back", target: self, action: #selector(back)),
-            iconButton("chevron.right", label: "Forward", target: self, action: #selector(forward)),
-            iconButton("arrow.clockwise", label: "Reload", target: self, action: #selector(reload)),
-            iconButton("plus", label: "New tab", target: self, action: #selector(newTab)),
-            iconButton("sidebar.left", label: "Toggle left tabs", target: self, action: #selector(togglePlacement)),
-            iconButton("slider.horizontal.3", label: "Settings", target: self, action: #selector(openSettings))
+            button(.back, "Back", #selector(back)),
+            button(.forward, "Forward", #selector(forward)),
+            button(.reload, "Reload", #selector(reload)),
+            button(.plus, "New tab", #selector(newTab)),
+            button(.placement, "Toggle left tabs", #selector(togglePlacement)),
+            button(.more, "Browser menu", #selector(showMore))
         ]
         buttons.forEach { toolbar.addSubview($0) }
+        toolbar.toolbarSurface = true
+        blockingButton = ChromeButton(title: "Blocking on", symbol: .shield, target: self, action: #selector(toggleBlocking))
+        blockingButton.toolTip = "Native blocking for this profile"
+        toolbar.addSubview(blockingButton)
+        headerWordmark.font = NSFont(name: "Arial", size: 14)
+        tabHeader.addSubview(headerWordmark)
         root.postsFrameChangedNotifications = true
-        boundsObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: root, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.layout() } }
+        frameObservers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: root, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.layout() } })
         applyTheme(); window.center()
     }
     required init?(coder: NSCoder) { fatalError() }
-    deinit { if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) } }
+    deinit { for observer in frameObservers { NotificationCenter.default.removeObserver(observer) } }
 
     func start(urls: [String]) {
         if urls.isEmpty { _ = addTab() }
         else { for url in urls { _ = addTab(url: URL(string: url)) } }
         showWindow(nil); window?.makeKeyAndOrderFront(nil)
+        applyTheme()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     @discardableResult func addTab(url: URL? = nil, configuration: WKWebViewConfiguration? = nil) -> BrowserTab? {
+        window?.makeFirstResponder(nil)
         let result = core.call(["op": "new"])
         guard let id = result["selected"] as? Int else { showError("The tab limit has been reached."); return nil }
         let tab = BrowserTab(id: id); tabs[id] = tab
         if let configuration { attachWeb(to: tab, configuration: configuration) }
         else if let url { attachWeb(to: tab); tab.web?.load(URLRequest(url: url)) }
         else { tab.native = newTabView(); pages.addSubview(tab.native!) }
-        refresh(); return tab
+        refresh()
+        revealTab(id)
+        return tab
     }
 
     private func attachWeb(to tab: BrowserTab, configuration supplied: WKWebViewConfiguration? = nil) {
         tab.native?.removeFromSuperview(); tab.native = nil
         let config = supplied ?? WKWebViewConfiguration()
         // Popup configuration is supplied by WebKit, preserving opener context.
-        if supplied == nil { config.websiteDataStore = profile.store }
+        if supplied == nil { config.websiteDataStore = profile.store;config.applicationNameForUserAgent=BrowserIdentity.applicationName }
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         config.preferences.isElementFullscreenEnabled = true
         let user = config.userContentController
@@ -143,45 +178,57 @@ import WebKit
         tab.observations.append(web.observe(\.isLoading, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.refreshAddress() } })
     }
 
-    private func newTabView() -> NSView {
-        let view = Surface()
-        let title = NSTextField(labelWithString: "sisu")
-        title.font = NSFont(name: "Helvetica Neue", size: 58)
-        title.alignment = .center
-        title.translatesAutoresizingMaskIntoConstraints = false
-        let search = NSSearchField()
-        search.placeholderString = "Search or enter an address"
-        search.font = NSFont(name: "Helvetica Neue", size: 16)
-        search.target = self; search.action = #selector(searchFromNewTab(_:))
-        search.sendsWholeSearchString = true; search.sendsSearchStringImmediately = false
-        search.translatesAutoresizingMaskIntoConstraints = false
-        search.setAccessibilityLabel("New tab search")
-        view.addSubview(title); view.addSubview(search)
-        NSLayoutConstraint.activate([
-            title.centerXAnchor.constraint(equalTo: view.centerXAnchor), title.bottomAnchor.constraint(equalTo: search.topAnchor, constant: -24),
-            search.centerXAnchor.constraint(equalTo: view.centerXAnchor), search.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -10),
-            search.widthAnchor.constraint(equalToConstant: 460), search.heightAnchor.constraint(equalToConstant: 42)
-        ])
-        return view
-    }
+    private func newTabView() -> NSView { NewTabView(controller: self) }
 
     func layout() {
         let size = root.bounds.size
+        let headerHeight: CGFloat = 47
+        let toolbarHeight: CGFloat = 52
         let left = profile.preferences.placement == "left"
-        let barHeight: CGFloat = 48
-        let tabHeight: CGFloat = left ? size.height-96 : 38
-        tabScroll.frame = left ? NSRect(x: 8, y: 96, width: 200, height: tabHeight) : NSRect(x: 88, y: 5, width: max(1,size.width-100), height: tabHeight)
-        toolbar.frame = NSRect(x: 8, y: 46, width: size.width-16, height: barHeight)
-        for (i, button) in buttons.enumerated() { button.frame = NSRect(x: i < 3 ? CGFloat(i)*36 : toolbar.bounds.width-CGFloat(6-i)*36, y: 7, width: 32, height: 32) }
-        address.frame = NSRect(x: 112, y: 7, width: max(180,toolbar.bounds.width-228), height: 32)
-        pages.frame = NSRect(x: left ? 216 : 0, y: 96, width: size.width-(left ? 216 : 0), height: max(1,size.height-96))
+        let side: CGFloat = left ? min(CGFloat(profile.preferences.sidebarWidth), size.width/2) : 0
         let ids = core.ids
-        let width = left ? 200 : min(208,max(120,(tabScroll.bounds.width-8)/CGFloat(max(1,ids.count))))
-        tabDocument.frame = NSRect(x: 0, y: 0, width: left ? 200 : max(tabScroll.bounds.width,CGFloat(ids.count)*(width+4)), height: left ? max(tabScroll.bounds.height, CGFloat(ids.count)*40) : 38)
-        for (i,id) in ids.enumerated() { chips[id]?.frame = NSRect(x: left ? 0 : CGFloat(i)*(width+4), y: left ? CGFloat(i)*40 : 0, width: width, height: 36) }
+        tabHeader.frame = NSRect(x: 0, y: 0, width: size.width, height: headerHeight)
+        let owner: NSView = left ? root : tabHeader
+        if tabScroll.superview !== owner { tabScroll.removeFromSuperview(); owner.addSubview(tabScroll) }
+        let headerWidth = tabHeader.bounds.width
+        let tabRowWidth = max(1, headerWidth-100)
+        let availablePerTab = tabRowWidth / CGFloat(max(1, ids.count)) - 4
+        let width = left ? max(1, side-18) : min(200, max(112, availablePerTab))
+        let tabExtent = CGFloat(ids.count) * (left ? 37 : width+4)
+        let tabScrollTop = headerHeight + 8
+        tabScroll.frame = left
+            ? NSRect(x: 8, y: tabScrollTop, width: max(1, side-18), height: max(1, size.height-tabScrollTop-46))
+            : NSRect(x: 12, y: 7, width: max(1, min(tabRowWidth, tabExtent)), height: 34)
+        headerWordmark.isHidden = !left
+        headerWordmark.frame = NSRect(x: 12,y: 11,width: 160,height: 26)
+        toolbar.frame = NSRect(x: side, y: headerHeight, width: size.width-side, height: toolbarHeight)
+        for i in 0..<3 { buttons[i].frame = NSRect(x: 10+CGFloat(i)*34,y: 9,width: 31,height: 32) }
+        let navWidth=toolbar.bounds.width,protectWidth:CGFloat=navWidth>630 ? 124:36
+        buttons[5].frame=NSRect(x:navWidth-43,y:9,width:32,height:32)
+        blockingButton.frame=NSRect(x:navWidth-50-protectWidth,y:9,width:protectWidth,height:32)
+        blockingButton.imagePosition=protectWidth>40 ? .imageLeading:.imageOnly
+        address.frame=NSRect(x:122,y:8,width:max(55,navWidth-61-protectWidth-122),height:35)
+        let contentTop = headerHeight + toolbarHeight
+        pages.frame = NSRect(x: side, y: contentTop, width: size.width-side, height: max(1, size.height-contentTop))
+        tabDocument.frame = NSRect(x: 0, y: 0,
+            width: left ? width : max(tabScroll.bounds.width, tabExtent),
+            height: left ? max(tabScroll.bounds.height, tabExtent) : 34)
+        for (i,id) in ids.enumerated() {
+            guard let chip=chips[id] else { continue }
+            let frame=NSRect(x:left ? 0:CGFloat(i)*(width+4),y:left ? CGFloat(i)*37:0,width:width,height:34)
+            if chip.frame != frame { chip.frame=frame;chip.needsLayout=true;chip.layoutSubtreeIfNeeded() }
+        }
+        let plusOwner:NSView=left ? root:tabHeader
+        if buttons[3].superview !== plusOwner { buttons[3].removeFromSuperview();plusOwner.addSubview(buttons[3]) }
+        if buttons[4].superview !== tabHeader { buttons[4].removeFromSuperview();tabHeader.addSubview(buttons[4]) }
+        buttons[3].frame = NSRect(
+            x: left ? 9 : min(tabScroll.frame.maxX,12+tabExtent),
+            y: left ? min(tabScroll.frame.maxY,tabScrollTop+tabExtent) : 8,
+            width: 32, height: 32)
+        buttons[4].frame=NSRect(x:headerWidth-43,y:8,width:34,height:32)
         for tab in tabs.values {
             for view in [tab.web as NSView?,tab.native].compactMap({$0}) {
-                if view.frame != pages.bounds { view.frame = pages.bounds }
+                if view.frame != pages.bounds { view.frame=pages.bounds;view.needsLayout=true;view.layoutSubtreeIfNeeded() }
             }
         }
     }
@@ -191,10 +238,16 @@ import WebKit
         for id in chips.keys where !ids.contains(id) { chips.removeValue(forKey: id)?.removeFromSuperview() }
         for id in ids where chips[id] == nil { let chip = TabChip(id: id, target: self); chips[id] = chip; tabDocument.addSubview(chip) }
         for tab in tabs.values { tab.web?.isHidden = tab.id != core.selected; tab.native?.isHidden = tab.id != core.selected }
-        refreshTitles(); refreshAddress(); layout()
+        refreshTitles(); refreshAddress(); refreshBlocking(); layout()
     }
     private func refreshTitles() {
-        for (id,tab) in tabs { chips[id]?.select.title = (tab.edited ? "• " : "") + tab.title; chips[id]?.active = id == core.selected; chips[id]?.needsDisplay = true }
+        for (id, tab) in tabs {
+            guard let chip = chips[id] else { continue }
+            chip.select.title = (tab.edited ? "• " : "") + tab.title
+            chip.select.setAccessibilityLabel(tab.edited ? "\(tab.title), unsaved edits" : tab.title)
+            chip.active = id == core.selected
+            chip.needsDisplay = true
+        }
         window?.title = (current?.title ?? "Sisu") + (profile.isPrivate ? " · Private · Sisu" : " · Sisu")
     }
     private func refreshAddress() {
@@ -206,12 +259,21 @@ import WebKit
 
     @objc func newTab() { _ = addTab(); focusAddress() }
     @objc func selectTab(_ sender: NSButton) { select(sender.tag) }
-    func select(_ id: Int) { _ = core.call(["op": "select", "id": id]); refresh(); if let web = current?.web { window?.makeFirstResponder(web) } }
+    private func revealTab(_ id: Int) {
+        if let chip = chips[id] { chip.scrollToVisible(chip.bounds) }
+    }
+    func select(_ id: Int) {
+        guard tabs[id] != nil else { return }
+        if id != core.selected { window?.makeFirstResponder(nil) }
+        _ = core.call(["op": "select", "id": id])
+        refresh()
+        revealTab(id)
+        if let web = current?.web { window?.makeFirstResponder(web) }
+    }
     @objc func closeTab(_ sender: NSButton) { requestClose(sender.tag) }
     @objc func closeCurrent() { if let id = core.selected { requestClose(id) } }
     @objc func focusAddress() { window?.makeFirstResponder(address); address.selectText(nil) }
     @objc func commitAddress() { navigate(address.stringValue) }
-    @objc func searchFromNewTab(_ sender: NSSearchField) { navigate(sender.stringValue) }
     func navigate(_ text: String) {
         if text == "browser://settings" { openSettings(); return }
         guard let url = core.destination(text, google: profile.preferences.google), let tab = current else { NSSound.beep(); return }
@@ -224,14 +286,56 @@ import WebKit
     @objc func zoomIn() { if let web = current?.web { web.pageZoom = min(3,web.pageZoom+0.1) } }
     @objc func zoomOut() { if let web = current?.web { web.pageZoom = max(0.5,web.pageZoom-0.1) } }
     @objc func zoomReset() { current?.web?.pageZoom = 1 }
-    @objc func togglePlacement() { profile.preferences.placement = profile.preferences.placement == "top" ? "left" : "top"; savePreferences(); layout() }
-    func setPlacement(_ value: String) { profile.preferences.placement = value; savePreferences(); layout() }
+    @objc func togglePlacement() { setPlacement(profile.preferences.placement == "top" ? "left" : "top") }
+    func setPlacement(_ value: String) {
+        profile.preferences.placement = value
+        savePreferences()
+        layout()
+        if let id = core.selected { revealTab(id) }
+    }
     func setTheme(_ value: String) { profile.preferences.theme = value; savePreferences(); applyTheme() }
+    func setSidebarWidth(_ value: Int) { profile.preferences.sidebarWidth=min(350,max(92,value));savePreferences();layout() }
+    func setProvider(_ google: Bool) {
+        profile.preferences.google=google;savePreferences()
+        for tab in tabs.values { (tab.native as? NewTabView)?.updateProvider() }
+    }
+    func setBlocking(_ enabled: Bool) {
+        profile.preferences.blocking=enabled
+        for tab in tabs.values {
+            if let user=tab.web?.configuration.userContentController {
+                user.removeAllContentRuleLists()
+                if enabled,let list=Blocker.shared.ruleList { user.add(list) }
+            }
+        }
+        savePreferences();refreshBlocking()
+    }
+    private func refreshBlocking() {
+        guard blockingButton != nil else { return }
+        blockingButton.title=current?.web == nil ? "Local page":(profile.preferences.blocking ? "Blocking on":"Blocking off")
+        blockingButton.isEnabled=current?.web != nil
+        blockingButton.setAccessibilityLabel(blockingButton.title)
+    }
+    @objc private func toggleBlocking() { setBlocking(!profile.preferences.blocking) }
+    @objc private func showMore() {
+        let menu=NSMenu()
+        for (title,action) in [("New tab",#selector(newTab)),("New window",#selector(openOtherWindow)),("New private window",#selector(openPrivateWindow)),("Settings",#selector(openSettings)),("Top / left tabs",#selector(togglePlacement)),("About Sisu",#selector(showAbout))] {
+            let item=NSMenuItem(title:title,action:action,keyEquivalent:"");item.target=self;menu.addItem(item)
+        }
+        menu.popUp(positioning:nil,at:NSPoint(x:0,y:buttons[5].bounds.height),in:buttons[5])
+    }
+    @objc private func openOtherWindow() { (NSApp.delegate as? AppDelegate)?.newWindow() }
+    @objc private func openPrivateWindow() { (NSApp.delegate as? AppDelegate)?.newPrivateWindow() }
+    @objc private func showAbout() { (NSApp.delegate as? AppDelegate)?.about() }
     private func applyTheme() {
         window?.appearance = profile.preferences.theme == "system" ? nil : NSAppearance(named: profile.preferences.theme == "dark" ? .darkAqua : .aqua)
+        window?.backgroundColor = Palette.background(root)
         root.needsDisplay = true; root.subviews.forEach { $0.needsDisplay = true }
+        headerWordmark.textColor=Palette.text(tabHeader)
+        tabHeader.needsDisplay=true;tabDocument.needsDisplay=true
+        for tab in tabs.values { tab.native?.needsDisplay=true;tab.native?.needsLayout=true }
+        refreshTitles()
     }
-    private func savePreferences() { do { try profile.save() } catch { showError(error.localizedDescription) } }
+    func savePreferences() { do { try profile.save() } catch { showError(error.localizedDescription) } }
 
     func confirmClose(_ tab: BrowserTab) -> Bool {
         guard tab.edited else { return true }
@@ -242,8 +346,10 @@ import WebKit
     }
     func requestClose(_ id: Int, confirmed: Bool = false) {
         guard let tab = tabs[id], confirmed || confirmClose(tab) else { return }
+        if id == core.selected { window?.makeFirstResponder(nil) }
         tab.observations.removeAll(); tab.web?.stopLoading()
-        tab.web?.configuration.userContentController.removeScriptMessageHandler(forName: "sisuWorkState", contentWorld: .defaultClient)
+        // Popups can share this controller with the opener. Its handler
+        // holds a weak reference and stays active until the controller dies.
         tab.web?.navigationDelegate = nil; tab.web?.uiDelegate = nil
         tab.web?.removeFromSuperview(); tab.native?.removeFromSuperview(); tabs.removeValue(forKey: id)
         _ = core.call(["op": "close", "id": id])
@@ -318,33 +424,4 @@ import WebKit
     weak var owner: BrowserWindow?
     init(_ owner: BrowserWindow) { self.owner = owner }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) { owner?.userContentController(userContentController, didReceive: message) }
-}
-
-@MainActor final class SettingsView: Surface {
-    weak var controller: BrowserWindow?
-    init(controller: BrowserWindow) {
-        self.controller = controller; super.init(frame: .zero)
-        let title = NSTextField(labelWithString: "Settings"); title.font = NSFont(name: "Helvetica Neue", size: 28); title.frame = NSRect(x: 48,y: 40,width: 600,height: 40); addSubview(title)
-        let labels = ["Tabs", "Appearance", "Search engine", "Blocking"]
-        for (i,text) in labels.enumerated() { let label = NSTextField(labelWithString:text); label.frame = NSRect(x:48,y:116+CGFloat(i)*64,width:180,height:26); addSubview(label) }
-        for (i,values) in [["Top","Left"],["Dark","Light","System"],["DuckDuckGo","Google"]].enumerated() {
-            let popup = NSPopUpButton(frame: NSRect(x:240,y:110+CGFloat(i)*64,width:220,height:32), pullsDown:false)
-            popup.addItems(withTitles:values); popup.tag = i; popup.target=self; popup.action = #selector(change(_:)); popup.setAccessibilityLabel(labels[i])
-            popup.selectItem(at:i == 0 ? (controller.profile.preferences.placement == "left" ? 1:0) : i == 1 ? (["dark","light","system"].firstIndex(of:controller.profile.preferences.theme) ?? 0) : (controller.profile.preferences.google ? 1:0)); addSubview(popup)
-        }
-        let block = NSButton(checkboxWithTitle:"Block ads and trackers", target:self, action:#selector(toggleBlocking(_:))); block.state = controller.profile.preferences.blocking ? .on : .off; block.frame = NSRect(x:240,y:302,width:260,height:30); addSubview(block)
-        let note = NSTextField(wrappingLabelWithString:"WebKit preview uses a converted subset of the pinned blocking lists. Chrome extensions are not installed in this candidate.")
-        note.textColor = .secondaryLabelColor; note.font = .systemFont(ofSize:12); note.frame = NSRect(x:48,y:390,width:540,height:60); addSubview(note)
-        if controller.profile.isPrivate { let note = NSTextField(labelWithString:"Changes in this private window are temporary."); note.frame=NSRect(x:48,y:466,width:600,height:30); addSubview(note) }
-    }
-    required init?(coder:NSCoder){fatalError()}
-    @objc func change(_ sender:NSPopUpButton){ guard let controller else{return}; switch sender.tag {
-        case 0:controller.setPlacement(sender.indexOfSelectedItem == 1 ? "left":"top")
-        case 1:controller.setTheme(["dark","light","system"][sender.indexOfSelectedItem])
-        default:controller.profile.preferences.google=sender.indexOfSelectedItem == 1; try? controller.profile.save()
-    }}
-    @objc func toggleBlocking(_ sender:NSButton){ guard let controller else{return}; controller.profile.preferences.blocking=sender.state == .on
-        for tab in controller.tabs.values { if let user=tab.web?.configuration.userContentController { user.removeAllContentRuleLists(); if sender.state == .on,let list=Blocker.shared.ruleList{user.add(list)} } }
-        do{try controller.profile.save()}catch{controller.showError(error.localizedDescription)}
-    }
 }

@@ -1,6 +1,6 @@
 # Working on Sisu for macOS
 
-Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.1 is an engineering alpha.
+Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.2 is an engineering alpha.
 
 The user authorizes separate platform engines and installers and prioritizes lowest practical Mac memory with WebKit extension limits. Keep one engine per session. Do not add a CEF fallback, an extra web runtime for controls, an AI sidebar, cloud sync or a marketing website.
 

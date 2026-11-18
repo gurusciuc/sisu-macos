@@ -32,7 +32,7 @@ import WebKit
     }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool{if !hasVisibleWindows{open(privateMode:false)};return true}
     @objc func newWindow(){open(privateMode:false)}
-    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Sisu WebKit Preview",.version:Bundle.main.object(forInfoDictionaryKey:"SisuVersion") as? String ?? "0.1.0-alpha.1"])}
+    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Sisu WebKit Preview",.version:BrowserIdentity.version,.credits:NSAttributedString(string:"WebKit \(BrowserIdentity.webKitBuild)\nNative AppKit interface · Rust core")])}
     @objc func newPrivateWindow(){open(privateMode:true)}
     @objc func newTab(){active?.newTab()}
     @objc func closeTab(){active?.closeCurrent()}

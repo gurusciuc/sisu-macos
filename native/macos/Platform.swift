@@ -3,6 +3,8 @@ import WebKit
 
 @MainActor final class RustCore {
     private let pointer: UnsafeMutableRawPointer
+    private(set) var ids:[Int]=[]
+    private(set) var selected:Int?
     init() { pointer = sisu_core_create()! }
     deinit { sisu_core_destroy(pointer) }
     func call(_ command: [String: Any]) -> [String: Any] {
@@ -11,12 +13,12 @@ import WebKit
             guard let response = sisu_core_command(pointer, bytes.bindMemory(to: UInt8.self).baseAddress, data.count) else { return [:] }
             defer { sisu_core_free(response) }
             let result = Data(String(cString: response).utf8)
-            return (try? JSONSerialization.jsonObject(with: result)) as? [String: Any] ?? [:]
+            let decoded=(try? JSONSerialization.jsonObject(with: result)) as? [String: Any] ?? [:]
+            if let tabs=decoded["tabs"] as? [Int] { ids=tabs;selected=decoded["selected"] as? Int }
+            return decoded
         }
     }
     var snapshot: [String: Any] { call(["op": "snapshot"]) }
-    var ids: [Int] { snapshot["tabs"] as? [Int] ?? [] }
-    var selected: Int? { snapshot["selected"] as? Int }
     func destination(_ text: String, google: Bool) -> URL? {
         guard let string = call(["op": "resolve", "input": text, "google": google])["destination"] as? String else { return nil }
         return URL(string: string)
@@ -28,6 +30,17 @@ struct Preferences: Codable {
     var theme = "dark"
     var google = false
     var blocking = true
+    var sidebarWidth = 216
+    enum CodingKeys: String, CodingKey { case placement,theme,google,blocking,sidebarWidth }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        placement = try values.decodeIfPresent(String.self, forKey: .placement) ?? "top"
+        theme = try values.decodeIfPresent(String.self, forKey: .theme) ?? "dark"
+        google = try values.decodeIfPresent(Bool.self, forKey: .google) ?? false
+        blocking = try values.decodeIfPresent(Bool.self, forKey: .blocking) ?? true
+        sidebarWidth = min(350,max(92,try values.decodeIfPresent(Int.self, forKey: .sidebarWidth) ?? 216))
+    }
 }
 
 @MainActor final class Profile {
@@ -81,25 +94,96 @@ struct Preferences: Codable {
     static func dark(_ view: NSView) -> Bool { view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
     static func background(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.15 : 0.95) }
     static func field(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.20 : 1.0) }
+    static func address(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.25 : 1.0) }
+    static func tab(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.30 : 1.0) }
+    static func tabBorder(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.45 : 0.70) }
+    static func hover(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 0.90) }
     static func line(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 0.80) }
     static func text(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.95 : 0.15) }
     static func muted(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.70 : 0.50) }
 }
 
 @MainActor class Surface: NSView {
+    var toolbarSurface = false
     override var isFlipped: Bool { true }
-    override func draw(_ dirtyRect: NSRect) { Palette.background(self).setFill(); bounds.fill() }
+    override func draw(_ dirtyRect: NSRect) { (toolbarSurface ? Palette.field(self) : Palette.background(self)).setFill(); bounds.fill() }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; subviews.forEach { $0.needsDisplay = true } }
 }
 
-@MainActor func iconButton(_ symbol: String, label: String, target: AnyObject, action: Selector) -> NSButton {
-    let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: target, action: action)
-    button.bezelStyle = .inline
-    button.isBordered = false
-    button.toolTip = label
-    button.setAccessibilityLabel(label)
-    button.contentTintColor = .labelColor
-    return button
+@MainActor final class DragSurface: Surface {
+    private var frameBeforeFill: NSRect?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        guard event.clickCount == 2 else {
+            window.performDrag(with: event)
+            return
+        }
+        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": window.performMiniaturize(nil)
+        case "None": break
+        case "Zoom": window.performZoom(nil)
+        default:
+            guard let screen = window.screen else { return }
+            if let previous = frameBeforeFill, window.frame == screen.visibleFrame {
+                frameBeforeFill = nil
+                window.setFrame(window.constrainFrameRect(previous, to: screen), display: true)
+            } else {
+                frameBeforeFill = window.frame
+                window.setFrame(screen.visibleFrame, display: true)
+            }
+        }
+    }
+}
+
+@MainActor final class RoundedField: NSTextField {
+    var rightPadding: CGFloat = 12 { didSet { (cell as? PaddedFieldCell)?.rightPadding = rightPadding } }
+    var isSearchField = false
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        cell = PaddedFieldCell(textCell: "")
+        isBordered = false; isBezeled = false; drawsBackground = false
+        isEditable = true; isSelectable = true
+        focusRingType = .none
+        cell?.isScrollable = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        let radius: CGFloat = isSearchField ? 12 : 6
+        let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
+        (isSearchField ? Palette.field(self) : Palette.address(self)).setFill(); shape.fill()
+        let focused = currentEditor() != nil && window?.firstResponder === currentEditor()
+        (focused ? Palette.neutral(Palette.dark(self) ? 0.80 : 0.30) : Palette.line(self)).setStroke(); shape.lineWidth = 1; shape.stroke()
+        super.draw(dirtyRect)
+    }
+    override func viewDidMoveToWindow(){super.viewDidMoveToWindow();textColor=Palette.text(self)}
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance();textColor=Palette.text(self); needsDisplay = true }
+}
+
+@MainActor enum BrowserIdentity {
+    static var version:String { Bundle.main.object(forInfoDictionaryKey:"SisuVersion") as? String ?? "alpha" }
+    static var webKitBuild:String { Bundle(for:WKWebView.self).object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "system" }
+    static var safariVersion:String? { Bundle(url:URL(fileURLWithPath:"/Applications/Safari.app"))?.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String }
+    static var applicationName:String {
+        // WKWebView's default identity omits Safari's browser-version tokens.
+        // Use the installed Safari/WebKit compatibility version, retaining Sisu's
+        // product identity. This does not claim Chrome APIs or provider support.
+        if let safariVersion { return "Version/\(safariVersion) Safari/605.1.15 Sisu/\(version)" }
+        return "Sisu/\(version)"
+    }
+}
+
+@MainActor final class PaddedFieldCell: NSTextFieldCell {
+    var rightPadding: CGFloat = 12
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        let height = min(rect.height,ceil((font?.ascender ?? 12) - (font?.descender ?? -3) + 2))
+        return NSRect(x:rect.minX+12,y:rect.minY+(rect.height-height)/2,width:max(0,rect.width-12-rightPadding),height:height)
+    }
+    override func edit(withFrame rect:NSRect,in control:NSView,editor:NSText,delegate:Any?,event:NSEvent?) { super.edit(withFrame:drawingRect(forBounds:rect),in:control,editor:editor,delegate:delegate,event:event) }
+    override func select(withFrame rect:NSRect,in control:NSView,editor:NSText,delegate:Any?,start:Int,length:Int) { super.select(withFrame:drawingRect(forBounds:rect),in:control,editor:editor,delegate:delegate,start:start,length:length) }
 }
 
 @MainActor final class Blocker {

@@ -4,11 +4,13 @@ import { readFile } from 'node:fs/promises';
 export async function fixture() {
   const hits = [];
   const states = new Map();
+  const agents = new Map();
   const html = await readFile(new URL('../fixtures/workload.html', import.meta.url), 'utf8');
   const capabilities=await readFile(new URL('../fixtures/capabilities.html',import.meta.url),'utf8');
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
     hits.push(url.pathname + url.search);
+    if (url.pathname !== '/report' && url.searchParams.has('run')) agents.set(url.searchParams.get('run'), String(req.headers['user-agent'] || ''));
     res.setHeader('Cache-Control', 'no-store');
     if(url.pathname==='/capabilities'){res.setHeader('Content-Type','text/html');return res.end(capabilities);}
     if(url.pathname==='/dedicated.js'||url.pathname==='/service.js'){
@@ -37,5 +39,5 @@ export async function fixture() {
     return res.end(html);
   });
   await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
-  return { server, hits, states, url: 'http://localhost:' + server.address().port };
+  return { server, hits, states, agents, url: 'http://localhost:' + server.address().port };
 }
