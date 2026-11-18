@@ -28,11 +28,16 @@ import WebKit
     func remove(_ controller:BrowserWindow){ windows.removeAll{$0 === controller} }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{true}
     func applicationShouldTerminate(_ sender:NSApplication)->NSApplication.TerminateReply {
-        windows.allSatisfy{$0.canCloseWindow()} ? .terminateNow : .terminateCancel
+        let count = windows.reduce(0) { $0 + $1.editedTabCount }
+        return confirmDiscard(count: count, action: "Quit Sisu") ? .terminateNow : .terminateCancel
+    }
+    func applicationWillTerminate(_ notification: Notification) {
+        // Closing the windows releases the WebKit views before AppKit exits.
+        for controller in windows { controller.window?.close() }
     }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows:Bool)->Bool{if !hasVisibleWindows{open(privateMode:false)};return true}
     @objc func newWindow(){open(privateMode:false)}
-    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Sisu WebKit Preview",.version:BrowserIdentity.version,.credits:NSAttributedString(string:"WebKit \(BrowserIdentity.webKitBuild)\nNative AppKit interface · Rust core")])}
+    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Sisu",.version:BrowserIdentity.version,.credits:NSAttributedString(string:"WebKit \(BrowserIdentity.webKitBuild)\nNative AppKit interface · Rust core")])}
     @objc func newPrivateWindow(){open(privateMode:true)}
     @objc func newTab(){active?.newTab()}
     @objc func closeTab(){active?.closeCurrent()}
@@ -52,12 +57,13 @@ import WebKit
         func menu(_ title:String)->NSMenu{let top=NSMenuItem();let menu=NSMenu(title:title);top.submenu=menu;bar.addItem(top);return menu}
         func add(_ menu:NSMenu,_ title:String,_ action:Selector,_ key:String,_ modifiers:NSEvent.ModifierFlags = .command,_ target:AnyObject? = nil){let item=NSMenuItem(title:title,action:action,keyEquivalent:key);item.keyEquivalentModifierMask=modifiers;item.target=target ?? self;menu.addItem(item)}
         let app=menu("Sisu")
-        add(app,"About Sisu WebKit Preview",#selector(about),"")
+        add(app,"About Sisu",#selector(about),"")
         app.addItem(.separator());add(app,"Settings…",#selector(settings),",")
         app.addItem(.separator());add(app,"Hide Sisu",#selector(NSApplication.hide(_:)),"h",.command,NSApp)
         add(app,"Hide Others",#selector(NSApplication.hideOtherApplications(_:)),"h",[.command,.option],NSApp)
         app.addItem(.separator());add(app,"Quit Sisu",#selector(NSApplication.terminate(_:)),"q",.command,NSApp)
         let file=menu("File");add(file,"New Tab",#selector(newTab),"t");add(file,"New Window",#selector(newWindow),"n");add(file,"New Private Window",#selector(newPrivateWindow),"n",[.command,.shift]);file.addItem(.separator());add(file,"Close Tab",#selector(closeTab),"w");file.addItem(.separator());add(file,"Import Cookies…",#selector(importCookies),"")
+        add(file,"Import Site Shortcuts…",#selector(importShortcuts),"")
         let edit=menu("Edit")
         for (title,selector,key) in [("Undo",Selector(("undo:")),"z"),("Redo",Selector(("redo:")),"Z"),("Cut",#selector(NSText.cut(_:)),"x"),("Copy",#selector(NSText.copy(_:)),"c"),("Paste",#selector(NSText.paste(_:)),"v"),("Select All",#selector(NSText.selectAll(_:)),"a")] {
             let entry=NSMenuItem(title:title,action:selector,keyEquivalent:key);entry.target=nil;edit.addItem(entry)

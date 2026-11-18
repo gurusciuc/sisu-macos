@@ -1,6 +1,6 @@
 [package]
 name = "sisu-core"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
@@ -14,6 +14,11 @@ default = ["mac-core"]
 mac-core = ["adblock/content-blocking"]
 
 [dependencies]
+prost = "0.14.6"
+ring = "0.17.14"
+spki = "0.7.3"
+zip = { version = "9.7.0", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
 adblock = { version = "=0.13.5", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling", "css-validation"] }
 html5gum = "=0.9.1"
 psl = "=2.1.255"

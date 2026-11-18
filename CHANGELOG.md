@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-alpha.7 · 18 November 2026
+
+- Lift the dark browser chrome and new-tab background to charcoal.
+- Install compatible signed Chrome Web Store extensions from the Sisu toolbar on macOS 15.4 or later.
+- Prefer HTTPS, mark unencrypted pages, and expose opt-in Web Inspector for the active tab.
+- Confirm discarding detected edits when closing a tab, closing a window or quitting.
+
+- Ship the first downloadable Apple Silicon alpha as a drag-to-Applications disk image.
+- Include File → Import Site Shortcuts… from the local shortcuts build.
+- Build a single Mac app named Sisu. Finder, the app menu and the About panel all use that name. The existing bundle identifier and browsing profile carry over from the WebKit Preview.
+
 ## 0.1.0-alpha.6 · 18 November 2026
 
 - Pressing a tab highlights its full rounded shape in the tab bar and sidebar. The close button keeps its own target.

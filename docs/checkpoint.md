@@ -1,6 +1,6 @@
 # macOS checkpoint · 18 November 2026
 
-Version **0.1.0-alpha.6** fixes the partial highlight when pressing a tab. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
+Version **0.1.0-alpha.7** packages the latest WebKit build as `Sisu.app`. Its existing bundle identifier and profile location carry over. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
 
 ## Verified on Apple Silicon
 
@@ -25,11 +25,15 @@ Run `tools/native-check.mjs` against an extracted bundle to reproduce the contro
 
 ## Chrome Web Store
 
-The user now requires direct Store installation. Apple's WebKit extension API accepts compatible local folders and ZIPs and has different API coverage. The installed WebKit preview has no extension installer. [Apple's compatibility guide](https://developer.apple.com/documentation/safariservices/assessing-your-safari-web-extension-s-browser-compatibility)
+On macOS 15.4 and later, alpha.7 installs compatible extensions in ordinary windows from the native **Add to Sisu** button or the manager in Settings. Sisu requires CRX3 signatures from the extension publisher and Chrome Web Store and verifies the package again when restoring it. Local testing installed Mini Calculator 1.0.0, opened its popup and confirmed it was available after quitting and relaunching.
 
-Two lab builds of the Mac CEF reference shell (CEF 156.0.30, Chromium 156.0.8078.96) tested the same Store listing. The separately created persistent request context returned “Installation is not enabled.” Using CEF's global request context with a fresh dedicated persistent profile brought up Chromium's native permission prompt for Google Translate. The prompt requested access to all websites. Install completion remains unverified. [Google Translate listing](https://chromewebstore.google.com/detail/google-translate/aapbdbdomjkkjkaonfhkkikfgjllcleb)
+The Store versions of Proton Pass 1.43.0 and Mars VPN 1.2.0 require APIs that Sisu’s WebKit implementation cannot supply. Proton Pass requires `chrome.offscreen` and Mars requires `chrome.proxy` and `chrome.offscreen`, among others. [Apple’s compatibility guide](https://developer.apple.com/documentation/safariservices/assessing-your-safari-web-extension-s-browser-compatibility)
 
-A replacement foundation must demonstrate a signed Store installation, permission consent, restart persistence, removal and updates before it replaces the WebKit preview. Check browser-level installation separately from extension popups and tab/window identity in the Sisu interface.
+## Profile, close protection and HTTPS
+
+- The rapid-restart fixture writes a fresh marker, reads it in the renderer and quits immediately. On the original app one of eight launches read the previous persistent marker. The build that releases WebKit views during quit passed a subsequent eight-launch test, including two private launches. Public WKWebsiteDataStore has no localStorage flush guarantee. The intermittent persistence issue remains open.
+- The public WKWebView API does not expose the native beforeunload close-confirmation hook. Sisu prompts for trusted form edits in tabs, windows and across windows when quitting. A page that relies only on a custom beforeunload handler may still close without a prompt.
+- An HTTPS response that redirected to `http://example.com/` ended at `https://example.com/` under WebKit on the tested Mac. Explicit HTTP loopback pages loaded with the **Not Secure** label. Older-system checks at response time prevent displaying an insecure redirect, but may occur after a cleartext request has been sent.
 
 ## Remaining work
 

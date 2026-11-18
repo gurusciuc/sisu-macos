@@ -92,13 +92,13 @@ struct Preferences: Codable {
         return NSColor(srgbRed: value, green: value, blue: value, alpha: 1)
     }
     static func dark(_ view: NSView) -> Bool { view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
-    static func background(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.15 : 0.95) }
-    static func field(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.20 : 1.0) }
-    static func address(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.25 : 1.0) }
-    static func tab(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.30 : 1.0) }
-    static func tabBorder(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.45 : 0.70) }
-    static func hover(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 0.90) }
-    static func line(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 0.80) }
+    static func background(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.25 : 0.95) }
+    static func field(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.30 : 1.0) }
+    static func address(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 1.0) }
+    static func tab(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.35 : 1.0) }
+    static func tabBorder(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.50 : 0.70) }
+    static func hover(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.40 : 0.90) }
+    static func line(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.45 : 0.80) }
     static func text(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.95 : 0.15) }
     static func muted(_ view: NSView) -> NSColor { neutral(dark(view) ? 0.70 : 0.50) }
 }

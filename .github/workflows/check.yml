@@ -5,6 +5,18 @@ permissions:
 jobs:
   macos:
     runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: ./tools/build-macos.sh dist/ci
+      - name: Build and verify disk image
+        shell: bash
+        run: |
+          xcrun --sdk macosx --show-sdk-version
+          ./tools/build-macos.sh dist/ci
+          mount="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" dist/ci/*.dmg
+          trap 'hdiutil detach "$mount"' EXIT
+          codesign --verify --strict "$mount/Sisu.app"
+          test "$(plutil -extract LSMinimumSystemVersion raw "$mount/Sisu.app/Contents/Info.plist")" = 14.0
+          "$mount/Sisu.app/Contents/MacOS/sisu-webkit" --version

@@ -1,7 +1,11 @@
 import AppKit
 import WebKit
 
-@MainActor final class BrowserTab {
+@MainActor final class BrowserTab: NSObject {
+    weak var owner: BrowserWindow?
+    var committedURL: URL?
+    var allowedCleartextOrigin: String?
+    var secureProvisionalLoad = false
     let id: Int
     var title = "New Tab"
     var web: WKWebView?
@@ -108,8 +112,11 @@ import WebKit
     private let toolbar = Surface()
     private let pages = Surface()
     private let address = RoundedField()
+    private let cleartextLabel = NSTextField(labelWithString: "Not Secure")
     private var chips: [Int: TabChip] = [:]
     private var buttons: [ChromeButton] = []
+    lazy var extensionButton = ChromeButton(title: "", symbol: nil, target: self, action: #selector(extensionButtonPressed))
+    var isInstallingExtension = false
     private var blockingButton: ChromeButton!
     private let headerWordmark = NSTextField(labelWithString: "sisu")
     private var frameObservers: [NSObjectProtocol] = []
@@ -140,6 +147,12 @@ import WebKit
         address.target = self; address.action = #selector(commitAddress)
         address.setAccessibilityLabel("Address and search")
         toolbar.addSubview(address)
+        cleartextLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        cleartextLabel.alignment = .center
+        cleartextLabel.isHidden = true
+        cleartextLabel.toolTip = "This page uses unencrypted HTTP."
+        cleartextLabel.setAccessibilityLabel("Not secure, unencrypted HTTP")
+        toolbar.addSubview(cleartextLabel)
         func button(_ symbol: ChromeSymbol, _ label: String, _ action: Selector) -> ChromeButton {
             let value = ChromeButton(symbol: symbol, target: self, action: action)
             value.toolTip = label; value.setAccessibilityLabel(label); return value
@@ -157,6 +170,10 @@ import WebKit
         blockingButton = ChromeButton(title: "Blocking on", symbol: .shield, target: self, action: #selector(toggleBlocking))
         blockingButton.toolTip = "Native blocking for this profile"
         toolbar.addSubview(blockingButton)
+        extensionButton.image = NSImage(systemSymbolName:"puzzlepiece.extension",accessibilityDescription:"Extensions")
+        extensionButton.imagePosition = .imageOnly; extensionButton.isHidden = profile.isPrivate
+        if #unavailable(macOS 15.4) { extensionButton.isHidden = true }
+        toolbar.addSubview(extensionButton)
         headerWordmark.font = NSFont(name: "Arial", size: 14)
         tabHeader.addSubview(headerWordmark)
         root.postsFrameChangedNotifications = true
@@ -167,6 +184,7 @@ import WebKit
     deinit { for observer in frameObservers { NotificationCenter.default.removeObserver(observer) } }
 
     func start(urls: [String]) {
+        if #available(macOS 15.4,*) { ExtensionLibrary.library(for:profile)?.controller.didOpenWindow(self) }
         if urls.isEmpty { _ = addTab() }
         else { for url in urls { _ = addTab(url: URL(string: url)) } }
         showWindow(nil); window?.makeKeyAndOrderFront(nil)
@@ -176,14 +194,18 @@ import WebKit
 
     @discardableResult func addTab(url: URL? = nil, configuration: WKWebViewConfiguration? = nil) -> BrowserTab? {
         window?.makeFirstResponder(nil)
+        let previous = current
         let result = core.call(["op": "new"])
         guard let id = result["selected"] as? Int else { showError("The tab limit has been reached."); return nil }
-        let tab = BrowserTab(id: id); tabs[id] = tab
+        let tab = BrowserTab(id: id); tab.owner = self; tabs[id] = tab
         if let configuration { attachWeb(to: tab, configuration: configuration) }
-        else if let url { attachWeb(to: tab); tab.web?.load(URLRequest(url: url)) }
+        else if let url { attachWeb(to: tab); loadAddress(url, in: tab) }
         else { tab.native = newTabView(); pages.addSubview(tab.native!) }
         refresh()
         revealTab(id)
+        if #available(macOS 15.4,*), let library = ExtensionLibrary.library(for:profile) {
+            library.controller.didOpenTab(tab); library.controller.didActivateTab(tab,previousActiveTab:previous)
+        }
         return tab
     }
 
@@ -192,6 +214,9 @@ import WebKit
         let config = supplied ?? WKWebViewConfiguration()
         // Popup configuration is supplied by WebKit, preserving opener context.
         if supplied == nil { config.websiteDataStore = profile.store;config.applicationNameForUserAgent=BrowserIdentity.applicationName }
+        if #available(macOS 15.4,*), supplied == nil {
+            config.webExtensionController = ExtensionLibrary.library(for:profile)?.controller
+        }
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         config.preferences.isElementFullscreenEnabled = true
         let user = config.userContentController
@@ -248,7 +273,12 @@ import WebKit
         buttons[5].frame=NSRect(x:navWidth-43,y:9,width:32,height:32)
         blockingButton.frame=NSRect(x:navWidth-50-protectWidth,y:9,width:protectWidth,height:32)
         blockingButton.imagePosition=protectWidth>40 ? .imageLeading:.imageOnly
-        address.frame=NSRect(x:122,y:8,width:max(55,navWidth-61-protectWidth-122),height:35)
+        let extensionWidth:CGFloat = extensionButton.isHidden ? 0 : extensionButton.title.isEmpty ? 34 : 100
+        extensionButton.frame = NSRect(x:blockingButton.frame.minX-extensionWidth-4,y:9,width:extensionWidth,height:32)
+        let warningWidth: CGFloat = cleartextLabel.isHidden ? 0 : 82
+        cleartextLabel.frame = NSRect(x:122,y:17,width:warningWidth,height:16)
+        let addressStart = 122 + warningWidth
+        address.frame = NSRect(x:addressStart,y:8,width:max(55,navWidth-61-protectWidth-extensionWidth-addressStart),height:35)
         let contentTop = headerHeight + toolbarHeight
         pages.frame = NSRect(x: side, y: contentTop, width: size.width-side, height: max(1, size.height-contentTop))
         tabDocument.frame = NSRect(x: 0, y: 0,
@@ -292,6 +322,12 @@ import WebKit
         window?.title = (current?.title ?? "Sisu") + (profile.isPrivate ? " · Private · Sisu" : " · Sisu")
     }
     private func refreshAddress() {
+        updateExtensionButton()
+        let isHTTP = current?.committedURL?.scheme?.lowercased() == "http"
+        if cleartextLabel.isHidden == isHTTP {
+            cleartextLabel.isHidden = !isHTTP
+            layout()
+        }
         guard window?.firstResponder !== address.currentEditor() else { return }
         address.stringValue = current?.web?.url?.absoluteString ?? (current?.title == "Settings" ? "browser://settings" : "")
         buttons.first?.isEnabled = current?.web?.canGoBack == true
@@ -306,7 +342,11 @@ import WebKit
     func select(_ id: Int) {
         guard tabs[id] != nil else { return }
         if id != core.selected { window?.makeFirstResponder(nil) }
+        let previous = current
         _ = core.call(["op": "select", "id": id])
+        if #available(macOS 15.4,*), let tab = current, tab !== previous {
+            ExtensionLibrary.library(for:profile)?.controller.didActivateTab(tab,previousActiveTab:previous)
+        }
         refresh()
         revealTab(id)
         if let web = current?.web { window?.makeFirstResponder(web) }
@@ -319,7 +359,23 @@ import WebKit
         if text == "browser://settings" { openSettings(); return }
         guard let url = core.destination(text, google: profile.preferences.google), let tab = current else { NSSound.beep(); return }
         if tab.web == nil { attachWeb(to: tab) }
-        tab.web?.load(URLRequest(url: url)); refresh(); window?.makeFirstResponder(tab.web)
+        loadAddress(url, in: tab); refresh(); window?.makeFirstResponder(tab.web)
+    }
+    private func loadAddress(_ url: URL, in tab: BrowserTab) {
+        tab.allowedCleartextOrigin = NavigationSecurity.cleartextOrigin(url)
+        tab.secureProvisionalLoad = url.scheme?.lowercased() == "https"
+        tab.web?.load(URLRequest(url: url))
+    }
+    @objc func allowPageInspection() {
+        guard let web = current?.web else { return }
+        web.isInspectable.toggle()
+        if web.isInspectable {
+            let alert = NSAlert()
+            alert.messageText = "Web Inspector is available for this tab"
+            alert.informativeText = "In Safari, enable developer features in Settings → Advanced. Then choose this Sisu page from Safari’s Develop menu."
+            alert.addButton(withTitle: "OK")
+            if let window { alert.beginSheetModal(for: window) }
+        }
     }
     @objc func back() { current?.web?.goBack() }
     @objc func forward() { current?.web?.goForward() }
@@ -359,7 +415,7 @@ import WebKit
     @objc private func toggleBlocking() { setBlocking(!profile.preferences.blocking) }
     @objc private func showMore() {
         let menu=NSMenu()
-        for (title,action) in [("New tab",#selector(newTab)),("New window",#selector(openOtherWindow)),("New private window",#selector(openPrivateWindow)),("Settings",#selector(openSettings)),("Top / left tabs",#selector(togglePlacement)),("About Sisu",#selector(showAbout))] {
+        for (title,action) in [("New tab",#selector(newTab)),("New window",#selector(openOtherWindow)),("New private window",#selector(openPrivateWindow)),("Settings",#selector(openSettings)),("Top / left tabs",#selector(togglePlacement)),(current?.web?.isInspectable == true ? "Disable Web Inspector" : "Allow Web Inspector",#selector(allowPageInspection)),("About Sisu",#selector(showAbout))] {
             let item=NSMenuItem(title:title,action:action,keyEquivalent:"");item.target=self;menu.addItem(item)
         }
         menu.popUp(positioning:nil,at:NSPoint(x:0,y:buttons[5].bounds.height),in:buttons[5])
@@ -381,27 +437,46 @@ import WebKit
     }
     func savePreferences() { do { try profile.save() } catch { showError(error.localizedDescription) } }
 
-    func confirmClose(_ tab: BrowserTab) -> Bool {
-        guard tab.edited else { return true }
-        let alert = NSAlert(); alert.messageText = "Close a tab with edits?"
-        alert.informativeText = "Changes in “\(tab.title)” may not have been saved."
-        alert.addButton(withTitle: "Keep Tab"); alert.addButton(withTitle: "Close Tab")
-        return alert.runModal() == .alertSecondButtonReturn
-    }
-    func requestClose(_ id: Int, confirmed: Bool = false) {
-        guard let tab = tabs[id], confirmed || confirmClose(tab) else { return }
+    var editedTabCount: Int { tabs.values.filter(\.edited).count }
+
+    func requestClose(_ id: Int) {
+        guard let tab = tabs[id] else { return }
+        if tab.edited && !confirmDiscard(count: 1, action: "Close Tab") { return }
+        let previous = current
         if id == core.selected { window?.makeFirstResponder(nil) }
-        tab.observations.removeAll(); tab.web?.stopLoading()
-        // Popups can share this controller with the opener. Its handler
-        // holds a weak reference and stays active until the controller dies.
-        tab.web?.navigationDelegate = nil; tab.web?.uiDelegate = nil
-        tab.web?.removeFromSuperview(); tab.native?.removeFromSuperview(); tabs.removeValue(forKey: id)
+        if #available(macOS 15.4,*) { ExtensionLibrary.library(for:profile)?.controller.didCloseTab(tab) }
+        detach(tab)
+        tabs.removeValue(forKey: id)
         _ = core.call(["op": "close", "id": id])
-        if core.ids.isEmpty { allowWindowClose = true; window?.close() } else { refresh() }
+        if core.ids.isEmpty {
+            allowWindowClose = true
+            window?.close()
+        } else {
+            if #available(macOS 15.4,*), let current, previous !== current {
+                ExtensionLibrary.library(for:profile)?.controller.didActivateTab(current,previousActiveTab:previous)
+            }
+            refresh()
+        }
     }
-    func canCloseWindow() -> Bool { tabs.values.filter(\.edited).allSatisfy { confirmClose($0) } }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { allowWindowClose || canCloseWindow() }
-    func windowWillClose(_ notification: Notification) { (NSApp.delegate as? AppDelegate)?.remove(self) }
+
+    private func detach(_ tab: BrowserTab) {
+        tab.observations.removeAll()
+        tab.web?.stopLoading()
+        tab.web?.navigationDelegate = nil
+        tab.web?.uiDelegate = nil
+        tab.web?.removeFromSuperview()
+        tab.web = nil
+        tab.native?.removeFromSuperview()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        allowWindowClose || confirmDiscard(count: editedTabCount, action: "Close Window")
+    }
+    func windowWillClose(_ notification: Notification) {
+        if #available(macOS 15.4,*) { ExtensionLibrary.library(for:profile)?.controller.didCloseWindow(self) }
+        for tab in tabs.values { detach(tab) }
+        (NSApp.delegate as? AppDelegate)?.remove(self)
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.world == .defaultClient, message.body as? Bool == true,
@@ -409,13 +484,58 @@ import WebKit
         tab.edited = true; refreshTitles()
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        tabs.values.first(where: {$0.web === webView})?.edited = false; refreshTitles()
+        if let tab = tabs.values.first(where: {$0.web === webView}) {
+            tab.edited = false
+            tab.committedURL = webView.url
+        }
+        refreshTitles()
+        refreshAddress()
     }
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url, ["http","https","about"].contains(url.scheme?.lowercased() ?? "") else { decisionHandler(.cancel); return }
-        decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 preferences: WKWebpagePreferences,
+                 decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        guard let url = action.request.url,
+              ["http","https","about"].contains(url.scheme?.lowercased() ?? "") else {
+            decisionHandler(.cancel, preferences); return
+        }
+        if action.targetFrame?.isMainFrame == true, let tab = tabs.values.first(where: {$0.web === webView}) {
+            let cleartext = NavigationSecurity.cleartextOrigin(url)
+            let explicitlyAllowed = cleartext != nil && cleartext == tab.allowedCleartextOrigin && !tab.secureProvisionalLoad
+            let localRequest = NavigationSecurity.isLoopback(url) && !tab.secureProvisionalLoad
+            if let cleartext, !localRequest, !explicitlyAllowed {
+                decisionHandler(.cancel, preferences)
+                // App-originated upgrade retains GET semantics. Never resubmit a form.
+                if action.request.httpMethod == "GET", let upgraded = NavigationSecurity.upgrade(url),
+                   !tab.secureProvisionalLoad || action.navigationType == .linkActivated {
+                    var request = action.request
+                    request.url = upgraded
+                    tab.allowedCleartextOrigin = nil
+                    tab.secureProvisionalLoad = true
+                    webView.load(request)
+                } else {
+                    showNavigationWarning("Sisu blocked an unencrypted navigation to " + cleartext + ".")
+                }
+                return
+            }
+            if url.scheme?.lowercased() == "https" {
+                tab.secureProvisionalLoad = true
+                tab.allowedCleartextOrigin = nil
+            }
+            if #available(macOS 15.2,*), !NavigationSecurity.isLoopback(url), !explicitlyAllowed {
+                preferences.preferredHTTPSNavigationPolicy = .errorOnFailure
+            }
+        }
+        decisionHandler(action.shouldPerformDownload ? .download : .allow, preferences)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame, let url = navigationResponse.response.url,
+           let origin = NavigationSecurity.cleartextOrigin(url),
+           let tab = tabs.values.first(where: {$0.web === webView}),
+           tab.secureProvisionalLoad || (!NavigationSecurity.isLoopback(url) && tab.allowedCleartextOrigin != origin) {
+            decisionHandler(.cancel)
+            showNavigationWarning("Sisu blocked a redirect to unencrypted HTTP.")
+            return
+        }
         if let response = navigationResponse.response as? HTTPURLResponse,
            response.statusCode == 204 || response.statusCode == 205 {
             decisionHandler(.cancel)
@@ -436,7 +556,15 @@ import WebKit
         // WebKitErrorFrameLoadInterruptedByPolicyChange accompanies a handled navigation,
         // including a handoff to WKDownload. WKError.Code does not expose this legacy code.
         if error.domain == "WebKitErrorDomain", error.code == 102 { return }
-        if !isCancellation(error) { showError(error.localizedDescription) }
+        if !isCancellation(error) { showNavigationWarning(error.localizedDescription) }
+    }
+    private func showNavigationWarning(_ message: String) {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Page could not load"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window)
     }
     private func isCancellation(_ error: NSError) -> Bool {
         (error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) ||
@@ -488,6 +616,8 @@ import WebKit
          "theme": profile.preferences.theme, "blocking": profile.preferences.blocking, "compiledRules": Blocker.shared.ruleList != nil,
          "viewport": ["width": pages.bounds.width,"height":pages.bounds.height], "edited":current?.edited ?? false,
          "webViews": tabs.values.filter({$0.web != nil}).count,
+         "committedURL": current?.committedURL?.absoluteString ?? "",
+         "notSecure": !cleartextLabel.isHidden,
          "isLoading": current?.web?.isLoading ?? false,
          "hasDialog": NSApp.modalWindow != nil || window?.attachedSheet != nil]
     }

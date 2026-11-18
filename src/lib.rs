@@ -2,6 +2,8 @@ pub mod bookmarks;
 pub mod cookies;
 #[cfg(feature = "mac-core")]
 mod native_core;
+#[cfg(feature = "mac-core")]
+mod store_package;
 use adblock::{Engine, request::Request};
 
 /// Only build-generated, hash-pinned list bytes enter the native deserializer.

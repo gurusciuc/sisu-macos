@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Draft close fixture</title>
+<p><label>Draft <textarea rows="5" cols="44"></textarea></label></p>
+<script>
+  const draft = document.querySelector('textarea');
+  draft.addEventListener('input', () => document.title = draft.value ? 'Unsaved draft' : 'Draft close fixture');
+  addEventListener('beforeunload', event => {
+    if (draft.value) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
+</script>

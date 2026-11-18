@@ -117,6 +117,8 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     private let wordmark=NSTextField(labelWithString:"sisu")
     private let field=RoundedField()
     private var searchButton:ChromeButton!
+    private var shortcuts: [SiteShortcut] = []
+    private var shortcutButtons: [ChromeButton] = []
     init(controller:BrowserWindow){
         self.controller=controller;super.init(frame:.zero)
         searchButton=ChromeButton(title:"Search",target:self,action:#selector(search))
@@ -124,6 +126,20 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         field.isSearchField=true;field.rightPadding=108;field.font=NSFont(name:"Arial",size:15)
         field.target=self;field.action = #selector(search);field.setAccessibilityLabel("New tab search")
         addSubview(wallpaper);addSubview(wordmark);addSubview(field);addSubview(searchButton);updateProvider()
+        if !controller.profile.isPrivate {
+            shortcuts = SiteShortcut.load(in: controller.profile.root)
+            shortcutButtons = shortcuts.enumerated().map { index, shortcut in
+                let button = ChromeButton(title: shortcut.title, target: self, action: #selector(openShortcut(_:)))
+                button.tag = index
+                button.outlined = true
+                button.font = NSFont(name: "Arial", size: 13)
+                button.lineBreakMode = .byTruncatingTail
+                button.toolTip = shortcut.url.absoluteString
+                button.setAccessibilityLabel(shortcut.title)
+                addSubview(button)
+                return button
+            }
+        }
     }
     required init?(coder:NSCoder){fatalError()}
     func updateProvider(){field.placeholderString="Search with " + (controller?.profile.preferences.google == true ? "Google":"DuckDuckGo")}
@@ -131,10 +147,19 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         super.layout()
         wallpaper.frame = bounds
         let width=min(584,bounds.width*0.84),size=min(88,max(62,bounds.width*0.09))
-        let top=max(24,(bounds.height-(size+38+58))/2-bounds.height*0.04)
+        let columns = width >= 440 ? 4 : 3
+        let rows = (shortcutButtons.count + columns - 1) / columns
+        let shortcutHeight: CGFloat = rows == 0 ? 0 : 12 + CGFloat(rows) * 36
+        let top=max(16,(bounds.height-(size+38+58+shortcutHeight))/2-bounds.height*0.04)
         wordmark.frame=NSRect(x:0,y:top,width:bounds.width,height:size+8)
         field.frame=NSRect(x:(bounds.width-width)/2,y:top+size+38,width:width,height:58)
         searchButton.frame=NSRect(x:field.frame.maxX-89,y:field.frame.minY+6,width:83,height:46)
+        let shortcutWidth = (width - CGFloat(columns - 1) * 8) / CGFloat(columns)
+        for (index, button) in shortcutButtons.enumerated() {
+            let x = field.frame.minX + CGFloat(index % columns) * (shortcutWidth + 8)
+            let y = field.frame.maxY + 16 + CGFloat(index / columns) * 36
+            button.frame = NSRect(x: x, y: y, width: shortcutWidth, height: 29)
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         wordmark.attributedStringValue = NSAttributedString(string: "sisu", attributes: [
@@ -146,6 +171,9 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     }
     override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();needsLayout=true}
     @objc private func search(){controller?.navigate(field.stringValue)}
+    @objc private func openShortcut(_ sender: NSButton) {
+        controller?.navigate(shortcuts[sender.tag].url.absoluteString)
+    }
 }
 
 @MainActor final class SettingsView: Surface {
@@ -175,6 +203,9 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
             choices[11] = button
             content.addSubview(button)
         }
+        label("extensions","Extensions")
+        let extensions = ChromeButton(title:"Manage Extensions…",target:controller,action:#selector(BrowserWindow.manageExtensions))
+        extensions.outlined = true; choices[12] = extensions; content.addSubview(extensions)
         label("version","Sisu \(Bundle.main.object(forInfoDictionaryKey:"SisuVersion") as? String ?? "alpha") · Apache 2.0",13,true)
         refreshChoices()
     }
@@ -196,6 +227,12 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
             elements["import"]?.frame = NSRect(x: x, y: y+7, width: width/2-8, height: 24)
             if stacked { y += 25 }
             importButton.frame = NSRect(x: right, y: y, width: stacked ? width : width/2, height: 33)
+            y += 41
+        }
+        if let extensions = choices[12] {
+            elements["extensions"]?.frame = NSRect(x:x,y:y+7,width:stacked ? width : width/2-8,height:24)
+            if stacked { y += 25 }
+            extensions.frame = NSRect(x:stacked ? x:x+width/2,y:y,width:stacked ? width:width/2,height:33)
             y += 41
         }
         row("tools",9,10);y += 20;place("version",24)

@@ -1,6 +1,6 @@
 # Working on Sisu for macOS
 
-Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.6 is an engineering alpha.
+Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.7 is an engineering alpha.
 
 The user authorizes separate platform engines and installers. Direct Chrome Web Store installation is now required for the next Mac foundation. Compare memory among candidates that meet the extension requirement and keep the working WebKit preview available during the evaluation. Keep one engine per session. Do not add an extra web runtime for controls, an AI sidebar, cloud sync or a marketing website.
 
@@ -14,4 +14,4 @@ Use the pinned toolchain and Cargo.lock. Run cargo fmt --all -- --check, cargo t
 
 Measure macOS physical footprint for all attributable UI, WebContent, GPU and networking processes. Deduplicate shared mappings and record workload, viewport, blocking, profile and sampling settings. Preserve historical results. Safari is a comparator, not an assumed performance target already beaten.
 
-Keep Apache-2.0, NOTICE and third-party licenses. Source publication is authorized. No production public binary release; Developer ID signing, notarization, secure updates and broader runtime acceptance remain release gates. Keep checkpoint and evidence current.
+Keep Apache-2.0, NOTICE and third-party licenses. Source publication and a downloadable GitHub alpha prerelease are authorized. Record architecture, signing and notarization status in release notes. Developer ID signing, notarization, secure updates and broader runtime acceptance remain production release gates. Keep checkpoint and evidence current.

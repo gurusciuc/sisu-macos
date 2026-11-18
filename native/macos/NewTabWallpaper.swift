@@ -47,7 +47,7 @@ import QuartzCore
 
         let grid = max(14, bounds.width / 160, bounds.height / 90)
         let paths = [NSBezierPath(), NSBezierPath(), NSBezierPath()]
-        let lightness = dark ? [0.20, 0.25, 0.30] : [0.90, 0.85, 0.80]
+        let lightness = dark ? [0.28, 0.32, 0.36] : [0.90, 0.85, 0.80]
         let firstColumn = max(0, Int(floor(dirtyRect.minX / grid)))
         let firstRow = max(0, Int(floor(dirtyRect.minY / grid)))
         let lastColumn = Int(ceil(dirtyRect.maxX / grid))
