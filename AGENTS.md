@@ -1,10 +1,10 @@
 # Working on Sisu for macOS
 
-Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.2 is an engineering alpha.
+Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.3 is an engineering alpha.
 
-The user authorizes separate platform engines and installers and prioritizes lowest practical Mac memory with WebKit extension limits. Keep one engine per session. Do not add a CEF fallback, an extra web runtime for controls, an AI sidebar, cloud sync or a marketing website.
+The user authorizes separate platform engines and installers. Direct Chrome Web Store installation is now required for the next Mac foundation. Compare memory among candidates that meet the extension requirement and keep the working WebKit preview available during the evaluation. Keep one engine per session. Do not add an extra web runtime for controls, an AI sidebar, cloud sync or a marketing website.
 
-Use neutral monochrome OKLCH lightness in 5% steps, Helvetica/Arial-family text, conventional geometric icons, top tabs by default and optional left tabs. Native controls must remain responsive without decorative blur or repeated animation. Top and left layouts move the same live views and use the same Rust model.
+Use neutral monochrome OKLCH lightness in 5% steps, Helvetica/Arial-family text, conventional geometric icons, top tabs by default and optional left tabs. Use short interaction transitions that respect Reduce Motion and settle at rest. Top and left layouts move the same live views and use the same Rust model.
 
 Preserve TLS validation, WebKit content-process sandboxing, origin boundaries, ordinary logins and active work. Private stores and preferences must stay out of ordinary records. No automatic tab discard. The isolated edit-state reporter has no privileged browser commands. Do not expose a webpage settings bridge or enable remote debugging to pass tests.
 

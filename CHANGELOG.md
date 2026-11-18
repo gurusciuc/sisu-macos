@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.3 · 18 November 2026
+
+- Add Inner Citadel, a Stoic dotted wallpaper that follows the new tab page's light or dark appearance.
+- Add 120 ms button hover transitions, 150 ms tab selection transitions and a half-second wallpaper entrance. All three respect Reduce Motion.
+- Double-click the empty macOS title bar or browser tab strip to fill the usable display and restore the previous size.
+
 ## 0.1.0-alpha.2 · 18 November 2026
 
 - Port the Windows design for tabs, navigation, new tab search and Settings to native AppKit controls.

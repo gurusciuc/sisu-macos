@@ -16,7 +16,15 @@ import WebKit
     let close: ChromeButton
     private let icon = NSImageView()
     var onSelect: (() -> Void)?
-    var active = false { didSet { close.isHidden = !active; needsDisplay = true } }
+    var active = false {
+        didSet {
+            guard oldValue != active else { return }
+            close.isHidden = !active
+            updateSelection()
+        }
+    }
+    private var selectionAmount: CGFloat = 0
+    private var selectionFade: ChromeFade?
     var middleClose: (() -> Void)?
     init(id: Int, target: BrowserWindow) {
         select = ChromeButton(title: "New Tab", target: target, action: #selector(BrowserWindow.selectTab(_:)))
@@ -46,11 +54,30 @@ import WebKit
         close.frame = NSRect(x: bounds.width-30, y: 5, width: 24, height: 24)
     }
     override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { middleClose?() } else { super.otherMouseDown(with: event) } }
+    private func updateSelection() {
+        selectionFade?.stop()
+        let amount: CGFloat = active ? 1 : 0
+        if window == nil || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            selectionAmount = amount
+            needsDisplay = true
+            return
+        }
+        let fade = ChromeFade(from: selectionAmount, to: amount, seconds: 0.15) { [weak self] value in
+            self?.selectionAmount = value
+            self?.needsDisplay = true
+        }
+        selectionFade = fade
+        fade.start()
+    }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        if active {
+        if selectionAmount > 0 {
             let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-            Palette.tab(self).setFill(); shape.fill(); Palette.tabBorder(self).setStroke(); shape.lineWidth = 1; shape.stroke()
+            Palette.tab(self).withAlphaComponent(selectionAmount).setFill()
+            shape.fill()
+            Palette.tabBorder(self).withAlphaComponent(selectionAmount).setStroke()
+            shape.lineWidth = 1
+            shape.stroke()
         }
         icon.contentTintColor = active ? Palette.text(self) : Palette.muted(self)
     }
@@ -78,7 +105,7 @@ import WebKit
 
     init(profile: Profile) {
         self.profile = profile
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let window = BrowserChromeWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init(window: window)
         window.title = profile.isPrivate ? "Sisu · Private" : "Sisu"
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true

@@ -1,5 +1,25 @@
 import AppKit
 
+@MainActor final class ChromeFade: NSAnimation {
+    private let update: (CGFloat) -> Void
+    private let start: CGFloat
+    private let end: CGFloat
+
+    init(from start: CGFloat, to end: CGFloat, seconds: TimeInterval, update: @escaping (CGFloat) -> Void) {
+        self.start = start
+        self.end = end
+        self.update = update
+        super.init(duration: seconds, animationCurve: .easeOut)
+        animationBlockingMode = .nonblocking
+        frameRate = 60
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+    override var currentProgress: NSAnimation.Progress {
+        didSet { update(start + (end - start) * CGFloat(currentValue)) }
+    }
+}
+
 enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement, shield, more, page }
 
 @MainActor func chromeImage(_ symbol: ChromeSymbol) -> NSImage {
@@ -30,7 +50,8 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     var outlined=false
     var hoverEnabled=true
     var onMiddleClick:(()->Void)?
-    private var hovered=false
+    private var hoverAmount: CGFloat = 0
+    private var hoverFade: ChromeFade?
     private var tracking:NSTrackingArea?
     override var title:String { didSet{if oldValue != title{updateInk()}} }
     init(title:String="",symbol:ChromeSymbol?=nil,target:AnyObject,action:Selector){
@@ -45,8 +66,28 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     required init?(coder:NSCoder){fatalError()}
     override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     override func updateTrackingAreas(){super.updateTrackingAreas();if let tracking{removeTrackingArea(tracking)};tracking=NSTrackingArea(rect:bounds,options:[.mouseEnteredAndExited,.activeInKeyWindow,.inVisibleRect],owner:self,userInfo:nil);addTrackingArea(tracking!)}
-    override func mouseEntered(with event:NSEvent){hovered=true;needsDisplay=true}
-    override func mouseExited(with event:NSEvent){hovered=false;needsDisplay=true}
+    override func mouseEntered(with event: NSEvent) { if hoverEnabled { setHoverAmount(1) } }
+    override func mouseExited(with event: NSEvent) { if hoverEnabled { setHoverAmount(0) } }
+    override func viewDidHide() {
+        super.viewDidHide()
+        hoverFade?.stop()
+        hoverAmount = 0
+        needsDisplay = true
+    }
+    private func setHoverAmount(_ amount: CGFloat) {
+        hoverFade?.stop()
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            hoverAmount = amount
+            needsDisplay = true
+            return
+        }
+        let fade = ChromeFade(from: hoverAmount, to: amount, seconds: 0.12) { [weak self] value in
+            self?.hoverAmount = value
+            self?.needsDisplay = true
+        }
+        hoverFade = fade
+        fade.start()
+    }
     override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();updateInk()}
     override func viewDidMoveToWindow(){super.viewDidMoveToWindow();updateInk()}
     private func updateInk(){
@@ -58,8 +99,13 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     override func draw(_ dirtyRect:NSRect){
         let rect=bounds.insetBy(dx:0.5,dy:0.5),shape=NSBezierPath(roundedRect:rect,xRadius:5,yRadius:5)
         if selectedStyle{Palette.text(self).setFill();shape.fill()}
-        else if isHighlighted || (hovered && hoverEnabled){Palette.hover(self).setFill();shape.fill()}
-        else if outlined{Palette.address(self).setFill();shape.fill()}
+        else {
+            if outlined { Palette.address(self).setFill(); shape.fill() }
+            if isHighlighted || hoverAmount > 0 {
+                Palette.hover(self).withAlphaComponent(isHighlighted ? 1 : hoverAmount).setFill()
+                shape.fill()
+            }
+        }
         if outlined{Palette.line(self).setStroke();shape.lineWidth=1;shape.stroke()}
         super.draw(dirtyRect)
     }
@@ -67,6 +113,7 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
 
 @MainActor final class NewTabView: Surface {
     weak var controller:BrowserWindow?
+    private let wallpaper = NewTabWallpaperView()
     private let wordmark=NSTextField(labelWithString:"sisu")
     private let field=RoundedField()
     private var searchButton:ChromeButton!
@@ -76,12 +123,13 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         searchButton.selectedStyle=true;searchButton.setAccessibilityLabel("Search")
         field.isSearchField=true;field.rightPadding=108;field.font=NSFont(name:"Arial",size:15)
         field.target=self;field.action = #selector(search);field.setAccessibilityLabel("New tab search")
-        addSubview(wordmark);addSubview(field);addSubview(searchButton);updateProvider()
+        addSubview(wallpaper);addSubview(wordmark);addSubview(field);addSubview(searchButton);updateProvider()
     }
     required init?(coder:NSCoder){fatalError()}
     func updateProvider(){field.placeholderString="Search with " + (controller?.profile.preferences.google == true ? "Google":"DuckDuckGo")}
     override func layout(){
         super.layout()
+        wallpaper.frame = bounds
         let width=min(584,bounds.width*0.84),size=min(88,max(62,bounds.width*0.09))
         let top=max(24,(bounds.height-(size+38+58))/2-bounds.height*0.04)
         wordmark.frame=NSRect(x:0,y:top,width:bounds.width,height:size+8)

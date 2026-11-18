@@ -110,30 +110,43 @@ struct Preferences: Codable {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; subviews.forEach { $0.needsDisplay = true } }
 }
 
-@MainActor final class DragSurface: Surface {
+@MainActor final class BrowserChromeWindow: NSWindow {
     private var frameBeforeFill: NSRect?
 
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, event.clickCount == 2,
+           let contentView, !styleMask.contains(.fullScreen) {
+            let pt = event.locationInWindow
+            let contentTop = contentView.convert(contentView.bounds, to: nil).maxY
+            // Leave the macOS window controls at the edges to AppKit.
+            if pt.y >= contentTop, pt.x >= 96, pt.x <= frame.width - 24 {
+                toggleFill()
+                return
+            }
+        }
+        super.sendEvent(event)
+    }
+
+    func toggleFill() {
+        guard let screen, !styleMask.contains(.fullScreen) else { return }
+        if let previous = frameBeforeFill, frame == screen.visibleFrame {
+            frameBeforeFill = nil
+            setFrame(constrainFrameRect(previous, to: screen), display: true)
+            return
+        }
+        frameBeforeFill = frame
+        setFrame(screen.visibleFrame, display: true)
+    }
+}
+
+@MainActor final class DragSurface: Surface {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
     override func mouseDown(with event: NSEvent) {
-        guard let window else { return }
-        guard event.clickCount == 2 else {
-            window.performDrag(with: event)
-            return
-        }
-        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
-        case "Minimize": window.performMiniaturize(nil)
-        case "None": break
-        case "Zoom": window.performZoom(nil)
-        default:
-            guard let screen = window.screen else { return }
-            if let previous = frameBeforeFill, window.frame == screen.visibleFrame {
-                frameBeforeFill = nil
-                window.setFrame(window.constrainFrameRect(previous, to: screen), display: true)
-            } else {
-                frameBeforeFill = window.frame
-                window.setFrame(screen.visibleFrame, display: true)
-            }
+        if event.clickCount == 2 {
+            (window as? BrowserChromeWindow)?.toggleFill()
+        } else {
+            window?.performDrag(with: event)
         }
     }
 }
