@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.6 · 18 November 2026
+
+- Pressing a tab highlights its full rounded shape in the tab bar and sidebar. The close button keeps its own target.
+
 ## 0.1.0-alpha.5 · 18 November 2026
 
 - Keep the current page open when a server returns HTTP 204 or 205.

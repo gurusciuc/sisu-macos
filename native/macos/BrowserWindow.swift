@@ -11,11 +11,28 @@ import WebKit
     init(id: Int) { self.id = id }
 }
 
+@MainActor final class TabSelectionButton: ChromeButton {
+    var tabOutline: NSBezierPath {
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted {
+            Palette.hover(self).setFill()
+            tabOutline.fill()
+        }
+        guard let cell = cell as? NSButtonCell else { return }
+        var labelFrame = cell.titleRect(forBounds: bounds)
+        labelFrame.origin.x = 32
+        labelFrame.size.width = max(0, bounds.width - labelFrame.minX - 31)
+        cell.drawTitle(attributedTitle, withFrame: labelFrame, in: self)
+    }
+}
+
 @MainActor final class TabChip: Surface {
-    let select: ChromeButton
+    let select: TabSelectionButton
     let close: ChromeButton
     private let icon = NSImageView()
-    var onSelect: (() -> Void)?
     var active = false {
         didSet {
             guard oldValue != active else { return }
@@ -25,9 +42,8 @@ import WebKit
     }
     private var selectionAmount: CGFloat = 0
     private var selectionFade: ChromeFade?
-    var middleClose: (() -> Void)?
     init(id: Int, target: BrowserWindow) {
-        select = ChromeButton(title: "New Tab", target: target, action: #selector(BrowserWindow.selectTab(_:)))
+        select = TabSelectionButton(title: "New Tab", target: target, action: #selector(BrowserWindow.selectTab(_:)))
         close = ChromeButton(symbol: .close, target: target, action: #selector(BrowserWindow.closeTab(_:)))
         super.init(frame: .zero)
         select.tag = id; close.tag = id
@@ -36,25 +52,22 @@ import WebKit
         close.setAccessibilityLabel("Close tab"); close.toolTip = "Close tab"
         close.isHidden = true
         icon.image = chromeImage(.page); icon.imageScaling = .scaleNone
-        addSubview(icon); addSubview(select); addSubview(close)
-        onSelect = { [weak target] in target?.select(id) }
-        middleClose = { [weak target] in target?.requestClose(id) }
-        select.onMiddleClick = middleClose; close.onMiddleClick = middleClose
+        addSubview(select); addSubview(icon); addSubview(close)
+        select.onMiddleClick = { [weak target] in target?.requestClose(id) }
+        close.onMiddleClick = select.onMiddleClick
     }
     required init?(coder: NSCoder) { fatalError() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        return hit === icon ? self : hit
+        return hit === icon ? select : hit
     }
-    override func mouseDown(with event: NSEvent) { onSelect?() }
     override func layout() {
         super.layout()
         icon.frame = NSRect(x: 10, y: 8, width: 16, height: 18)
-        select.frame = NSRect(x: 32, y: 0, width: max(0, bounds.width-63), height: bounds.height)
+        select.frame = bounds
         close.frame = NSRect(x: bounds.width-30, y: 5, width: 24, height: 24)
     }
-    override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { middleClose?() } else { super.otherMouseDown(with: event) } }
     private func updateSelection() {
         selectionFade?.stop()
         let amount: CGFloat = active ? 1 : 0
@@ -73,7 +86,7 @@ import WebKit
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         if selectionAmount > 0 {
-            let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
+            let shape = select.tabOutline
             Palette.tab(self).withAlphaComponent(selectionAmount).setFill()
             shape.fill()
             Palette.tabBorder(self).withAlphaComponent(selectionAmount).setStroke()

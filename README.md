@@ -1,6 +1,6 @@
 # Sisu for macOS
 
-**0.1.0-alpha.5 — an experimental native Mac browser.** AppKit recreates Sisu for Windows' compact tabs, toolbar, new tab page and Settings. System WebKit renders websites, and Rust owns tab order, selection, address policy and blocking list conversion.
+**0.1.0-alpha.6 — an experimental native Mac browser.** AppKit recreates Sisu for Windows' compact tabs, toolbar, new tab page and Settings. System WebKit renders websites, and Rust owns tab order, selection, address policy and blocking list conversion.
 
 The Windows implementation is maintained separately in [gurusciuc/sisu](https://github.com/gurusciuc/sisu). The platforms can use different engines and native interfaces. The priority for this Mac candidate is lowest practical measured memory, with WebKit extension limitations accepted. No memory advantage over Safari has been established yet.
 
@@ -9,7 +9,7 @@ The Windows implementation is maintained separately in [gurusciuc/sisu](https://
 Requires macOS 14+, Apple's Command Line Tools and the Rust toolchain pinned in `rust-toolchain.toml`. Full Xcode, CMake and Ninja are not required.
 
 ```sh
-./tools/build-macos.sh dist/alpha5
+./tools/build-macos.sh dist/alpha6
 ```
 
 The archive targets the Mac used to build it. It is not universal. It contains the native executable, converted blocking lists and license notices; WebKit comes from macOS. Local ad-hoc signatures are verified. Developer ID signing, notarization and distribution acceptance remain open.

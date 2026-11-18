@@ -1,8 +1,12 @@
 # macOS checkpoint · 18 November 2026
 
-Version **0.1.0-alpha.5** fixes the “Frame load interrupted” and “cancelled” dialogs during normal browsing and download cancellation. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
+Version **0.1.0-alpha.6** fixes the partial highlight when pressing a tab. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
 
 ## Verified on Apple Silicon
+
+In alpha.6, a native AppKit check sampled the left edge, middle and right edge of pressed tabs in both themes. All three positions had the same fill, the corners stayed rounded and releasing the button restored its prior appearance. The check exercised selected and unselected tabs in the top bar and the narrowest sidebar. Hit-testing routed the icon, title and padding to tab selection and the visible close button to its own action.
+
+All nine Rust tests passed. The first packaged run passed the tab checks but read an older local-storage marker after a quick restart. A fresh run passed all five launches, including ordinary and private profile checks. The intermittent storage result remains open.
 
 In alpha.4, a local HTTP 204 response and a download handoff each produced the frame-interruption alert. Declining a download destination also produced the cancellation alert. The alpha.5 regression check verified that 204 and 205 responses (including a binary MIME type) preserve the current document and draft without opening a dialog. In the packaged build, cancelling the native save sheet returned to the fixture page, a deliberately dropped connection displayed a network error, and the signed-out YouTube homepage rendered with its search field. All nine Rust release tests and all five native test launches passed.
 

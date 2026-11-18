@@ -45,7 +45,7 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     image.isTemplate=true;return image
 }
 
-@MainActor final class ChromeButton: NSButton {
+@MainActor class ChromeButton: NSButton {
     var selectedStyle=false { didSet{if oldValue != selectedStyle{updateInk();needsDisplay=true}} }
     var outlined=false
     var hoverEnabled=true
