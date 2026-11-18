@@ -101,11 +101,7 @@ struct CookieImport: Sendable {
     @MainActor func store(in profile: Profile) async {
         guard !profile.isPrivate else { return }
         let store = profile.store.httpCookieStore
-        if #available(macOS 26.0, *) {
-            await store.setCookies(cookies)
-        } else {
-            for cookie in cookies { await store.setCookie(cookie) }
-        }
+        for cookie in cookies { await store.setCookie(cookie) }
     }
 }
 
