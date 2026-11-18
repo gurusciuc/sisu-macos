@@ -30,6 +30,21 @@ try{
   const first=await report('wk-first');assert.equal(first.prior,'empty');assert.equal(first.cookieBefore,'');assert.equal(first.hidden,'true');assert.equal(first.control,'true');
   const anchor=initial.selected;await command('eval',{source:'document.querySelector("textarea").value="A draft that must survive native tab and layout changes"; true'});
   const before=await state();
+  for (const path of ['/empty', '/empty-binary']) {
+    await command('navigate', {url: f.url + path});
+    let settled = false;
+    for (let i = 0; i < 100; i++) {
+      const snap = await command('snapshot');
+      assert.equal(snap.hasDialog, false, 'Unexpected dialog for ' + path);
+      if (f.hits.includes(path) && !snap.isLoading) { settled = true; break; }
+      await sleep(50);
+    }
+    assert(settled, 'Navigation did not settle for ' + path);
+    const preserved = await state();
+    assert.equal(preserved.documentId, before.documentId);
+    assert.equal(preserved.draft, before.draft);
+  }
+  evidence.checks.no_content_preserves_page_without_dialog = true;
   assert.equal(before.userAgent,f.agents.get('wk-first'));assert.match(before.userAgent,/Version\/[\d.]+ Safari\/605\.1\.15 Sisu\//);evidence.checks.http_and_javascript_browser_identity=true;
   await command('layout',{value:'left'});const left=await state();assert.equal(left.documentId,before.documentId);assert.equal(left.draft,before.draft);
   await command('layout',{value:'top'});const top=await state();assert.equal(top.documentId,before.documentId);assert.equal(top.draft,before.draft);

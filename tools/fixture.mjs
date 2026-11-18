@@ -12,6 +12,11 @@ export async function fixture() {
     hits.push(url.pathname + url.search);
     if (url.pathname !== '/report' && url.searchParams.has('run')) agents.set(url.searchParams.get('run'), String(req.headers['user-agent'] || ''));
     res.setHeader('Cache-Control', 'no-store');
+    if (url.pathname === '/empty' || url.pathname === '/empty-binary') {
+      const binary = url.pathname === '/empty-binary';
+      res.writeHead(binary ? 205 : 204, binary ? { 'Content-Type': 'application/octet-stream' } : {});
+      return res.end();
+    }
     if(url.pathname==='/capabilities'){res.setHeader('Content-Type','text/html');return res.end(capabilities);}
     if(url.pathname==='/dedicated.js'||url.pathname==='/service.js'){
       res.setHeader('Content-Type','text/javascript');

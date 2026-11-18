@@ -1,8 +1,10 @@
 # macOS checkpoint · 18 November 2026
 
-Version **0.1.0-alpha.4** adds JSON cookie import. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
+Version **0.1.0-alpha.5** fixes the “Frame load interrupted” and “cancelled” dialogs during normal browsing and download cancellation. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
 
 ## Verified on Apple Silicon
+
+In alpha.4, a local HTTP 204 response and a download handoff each produced the frame-interruption alert. Declining a download destination also produced the cancellation alert. The alpha.5 regression check verified that 204 and 205 responses (including a binary MIME type) preserve the current document and draft without opening a dialog. In the packaged build, cancelling the native save sheet returned to the fixture page, a deliberately dropped connection displayed a network error, and the signed-out YouTube homepage rendered with its search field. All nine Rust release tests and all five native test launches passed.
 
 The alpha.4 build passed Rust formatting and all nine release tests. Swift compiled for arm64 and the packaged app passed strict signature verification. Settings opened the JSON chooser. A separate harness linked the app's importer and profile code and exercised it with synthetic records and a localhost server. The server received cookies only on the intended host and path. JavaScript could see the ordinary fixture cookie and could not see its HttpOnly companion. The persistent record survived restart, and the expired record and fresh private store sent no imported cookies.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.5 · 18 November 2026
+
+- Keep the current page open when a server returns HTTP 204 or 205.
+- Dismiss cancelled navigations and downloads quietly, including the handoff from a page load to the save dialog. Genuine load and download failures still surface.
+
 ## 0.1.0-alpha.4 · 18 November 2026
 
 - Import Windows-compatible JSON cookie exports into the ordinary WebKit profile from File or Settings.

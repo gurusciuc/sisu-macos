@@ -403,12 +403,32 @@ import WebKit
         decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if let response = navigationResponse.response as? HTTPURLResponse,
+           response.statusCode == 204 || response.statusCode == 205 {
+            decisionHandler(.cancel)
+            return
+        }
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { addTab(configuration: configuration)?.web }
     func webViewDidClose(_ webView: WKWebView) { if let tab = tabs.values.first(where: {$0.web === webView}) { requestClose(tab.id) } }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showError("This page's process stopped. Reload it when you are ready; unsaved edits may be unavailable.") }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { if (error as NSError).code != NSURLErrorCancelled { showError(error.localizedDescription) } }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        reportNavigationFailure(error as NSError)
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        reportNavigationFailure(error as NSError)
+    }
+    private func reportNavigationFailure(_ error: NSError) {
+        // WebKitErrorFrameLoadInterruptedByPolicyChange accompanies a handled navigation,
+        // including a handoff to WKDownload. WKError.Code does not expose this legacy code.
+        if error.domain == "WebKitErrorDomain", error.code == 102 { return }
+        if !isCancellation(error) { showError(error.localizedDescription) }
+    }
+    private func isCancellation(_ error: NSError) -> Bool {
+        (error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) ||
+        (error.domain == NSCocoaErrorDomain && error.code == NSUserCancelledError)
+    }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = siteAlert(frame, message); alert.addButton(withTitle: "OK"); alert.runModal(); completionHandler()
     }
@@ -431,10 +451,17 @@ import WebKit
     private func register(_ download: WKDownload) { downloads[ObjectIdentifier(download)] = download; download.delegate = self }
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         let panel = NSSavePanel(); panel.nameFieldStringValue = URL(fileURLWithPath: suggestedFilename).lastPathComponent
-        panel.beginSheetModal(for: window!) { answer in completionHandler(answer == .OK ? panel.url : nil); if answer != .OK { self.downloads.removeValue(forKey: ObjectIdentifier(download)) } }
+        panel.beginSheetModal(for: window!) { answer in
+            let destination = answer == .OK ? panel.url : nil
+            if destination == nil { self.downloads.removeValue(forKey: ObjectIdentifier(download)) }
+            completionHandler(destination)
+        }
     }
     func downloadDidFinish(_ download: WKDownload) { downloads.removeValue(forKey: ObjectIdentifier(download)) }
-    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) { downloads.removeValue(forKey: ObjectIdentifier(download)); showError(error.localizedDescription) }
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        guard downloads.removeValue(forKey: ObjectIdentifier(download)) != nil else { return }
+        if !isCancellation(error as NSError) { showError(error.localizedDescription) }
+    }
 
     @objc func openSettings() {
         if let tab = tabs.values.first(where: {$0.title == "Settings" && $0.web == nil}) { select(tab.id); return }
@@ -447,7 +474,9 @@ import WebKit
          "profileID": profile.store.identifier?.uuidString ?? "", "placement": profile.preferences.placement,
          "theme": profile.preferences.theme, "blocking": profile.preferences.blocking, "compiledRules": Blocker.shared.ruleList != nil,
          "viewport": ["width": pages.bounds.width,"height":pages.bounds.height], "edited":current?.edited ?? false,
-         "webViews": tabs.values.filter({$0.web != nil}).count]
+         "webViews": tabs.values.filter({$0.web != nil}).count,
+         "isLoading": current?.web?.isLoading ?? false,
+         "hasDialog": NSApp.modalWindow != nil || window?.attachedSheet != nil]
     }
 }
 
