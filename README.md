@@ -1,6 +1,6 @@
 # Sisu for macOS
 
-**0.1.0-alpha.3 — an experimental native Mac browser.** AppKit recreates Sisu for Windows' compact tabs, toolbar, new tab page and Settings. System WebKit renders websites, and Rust owns tab order, selection, address policy and blocking list conversion.
+**0.1.0-alpha.4 — an experimental native Mac browser.** AppKit recreates Sisu for Windows' compact tabs, toolbar, new tab page and Settings. System WebKit renders websites, and Rust owns tab order, selection, address policy and blocking list conversion.
 
 The Windows implementation is maintained separately in [gurusciuc/sisu](https://github.com/gurusciuc/sisu). The platforms can use different engines and native interfaces. The priority for this Mac candidate is lowest practical measured memory, with WebKit extension limitations accepted. No memory advantage over Safari has been established yet.
 
@@ -9,7 +9,7 @@ The Windows implementation is maintained separately in [gurusciuc/sisu](https://
 Requires macOS 14+, Apple's Command Line Tools and the Rust toolchain pinned in `rust-toolchain.toml`. Full Xcode, CMake and Ninja are not required.
 
 ```sh
-./tools/build-macos.sh dist/alpha3
+./tools/build-macos.sh dist/alpha4
 ```
 
 The archive targets the Mac used to build it. It is not universal. It contains the native executable, converted blocking lists and license notices; WebKit comes from macOS. Local ad-hoc signatures are verified. Developer ID signing, notarization and distribution acceptance remain open.
@@ -19,6 +19,7 @@ The archive targets the Mac used to build it. It is not universal. It contains t
 - Native top/left tabs, address/search, navigation, zoom, native new-tab view and Settings. One Rust tab model drives the same live content views.
 - The Inner Citadel wallpaper frames new tab search in both themes. Short transitions for dots, tabs and buttons respect macOS Reduce Motion.
 - Persistent ordinary WebKit data stores and independent nonpersistent private stores. Private preferences remain in memory.
+- **Settings → Browser data → Import cookies…** accepts a JSON array or an object with a `cookies` array, in the same format as Sisu for Windows. Importing may replace matching cookies in the ordinary Sisu profile. Expired records are skipped. Files with partitioned cookies or attributes that cannot be represented are rejected before changes are made.
 - Compiled WebKit content rules exported from the hash-pinned EasyList/EasyPrivacy inputs. Conversion is partial; the bundled report records the counts and hash. Scriptlets and equivalent adblock-rust coverage are not promised.
 - Native dialogs, file-picker, download destination and media-permission routing. TLS and WebKit's content-process sandbox are retained.
 - Isolated-world edit monitoring asks before closing tabs with detected edits. No automatic tab discard is enabled. General page-defined beforeunload close handling is a release gate.

@@ -1,10 +1,12 @@
 # macOS checkpoint · 18 November 2026
 
-Version **0.1.0-alpha.3** adds the Inner Citadel dotted wallpaper, short motion and double-click fill from the native title bar. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
+Version **0.1.0-alpha.4** adds JSON cookie import. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
 
 ## Verified on Apple Silicon
 
-The alpha.3 build passed Rust formatting and all nine release tests. Swift compiled for arm64 and the packaged app passed strict signature verification. In the installed candidate's staged bundle, a native title bar double-click expanded the window from 1200 to 1470 points wide and a tab strip double-click restored it. Command-T displayed the wallpaper and left the address bar ready for input.
+The alpha.4 build passed Rust formatting and all nine release tests. Swift compiled for arm64 and the packaged app passed strict signature verification. Settings opened the JSON chooser. A separate harness linked the app's importer and profile code and exercised it with synthetic records and a localhost server. The server received cookies only on the intended host and path. JavaScript could see the ordinary fixture cookie and could not see its HttpOnly companion. The persistent record survived restart, and the expired record and fresh private store sent no imported cookies.
+
+In alpha.3, a native title bar double-click expanded the window from 1200 to 1470 points wide and a tab strip double-click restored it. Command-T displayed the wallpaper and left the address bar ready for input.
 
 The alpha.2 acceptance run also verified the following.
 
@@ -19,16 +21,16 @@ Run `tools/native-check.mjs` against an extracted bundle to reproduce the contro
 
 The user now requires direct Store installation. Apple's WebKit extension API accepts compatible local folders and ZIPs and has different API coverage. The installed WebKit preview has no extension installer. [Apple's compatibility guide](https://developer.apple.com/documentation/safariservices/assessing-your-safari-web-extension-s-browser-compatibility)
 
-A lab build of the existing Mac CEF reference shell (CEF 156.0.30, Chromium 156.0.8078.96) allowed extensions in a fresh persistent test profile. It loaded the Google Translate Store listing. After dismissing Google's browser recommendation, clicking Add to Chrome returned “Installation is not enabled.” The test did not install an extension. [Google Translate listing](https://chromewebstore.google.com/detail/google-translate/aapbdbdomjkkjkaonfhkkikfgjllcleb)
+Two lab builds of the Mac CEF reference shell (CEF 156.0.30, Chromium 156.0.8078.96) tested the same Store listing. The separately created persistent request context returned “Installation is not enabled.” Using CEF's global request context with a fresh dedicated persistent profile brought up Chromium's native permission prompt for Google Translate. The prompt requested access to all websites. Install completion remains unverified. [Google Translate listing](https://chromewebstore.google.com/detail/google-translate/aapbdbdomjkkjkaonfhkkikfgjllcleb)
 
 A replacement foundation must demonstrate a signed Store installation, permission consent, restart persistence, removal and updates before it replaces the WebKit preview. Check browser-level installation separately from extension popups and tab/window identity in the Sisu interface.
 
 ## Remaining work
 
 - Measure full application, WebContent, GPU and networking physical footprint in a process group isolated from the test host. Match the workload, viewport and profile before comparing with Safari.
-- Verify HttpOnly scope, further blocking exceptions, downloads, popups, file upload, media prompts, real-site logins, accessibility, IME and mixed-DPI behavior.
+- Verify further blocking exceptions, downloads, popups, file upload, media prompts, real-site logins, accessibility, IME and mixed-DPI behavior.
 - Handle general page-defined beforeunload and recover from crashes. Existing close protection applies to detected edits.
-- Add browser data import. The Mac preview currently has no import UI for the Windows cookie JSON and bookmark HTML formats.
+- Add bookmark HTML import and the library interface.
 - Developer ID signing, notarization, installer and update security, and production release review.
 
 ## Primary platform references

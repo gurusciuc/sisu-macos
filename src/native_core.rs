@@ -117,6 +117,30 @@ pub unsafe extern "C" fn sisu_core_command(
 }
 
 /// # Safety
+/// `bytes` must identify `length` readable bytes for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sisu_parse_cookie_export(
+    bytes: *const u8,
+    length: usize,
+    now: i64,
+) -> *mut c_char {
+    let result = if bytes.is_null() || length > crate::cookies::MAX_BYTES {
+        Err("Choose a nonempty cookie export no larger than 8 MiB.".into())
+    } else {
+        let input = unsafe { std::slice::from_raw_parts(bytes, length) };
+        crate::cookies::parse_export(input, now)
+    };
+    let response = match result {
+        Ok(export) => serde_json::to_string(&export).ok(),
+        Err(error) => Some(serde_json::json!({"error": error}).to_string()),
+    };
+    response
+        .and_then(|value| CString::new(value).ok())
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// # Safety
 /// Pass an unfreed response returned by sisu_core_command, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sisu_core_free(response: *mut c_char) {

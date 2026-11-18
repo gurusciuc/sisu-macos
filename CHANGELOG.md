@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.4 · 18 November 2026
+
+- Import Windows-compatible JSON cookie exports into the ordinary WebKit profile from File or Settings.
+- Validate cookie scope and security attributes before writes. Skip expired cookies and reject exports with partitioned cookies or domain cookies on public suffixes.
+
 ## 0.1.0-alpha.3 · 18 November 2026
 
 - Add Inner Citadel, a Stoic dotted wallpaper that follows the new tab page's light or dark appearance.

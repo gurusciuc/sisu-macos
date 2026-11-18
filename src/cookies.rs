@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_COOKIES: usize = 1_000;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SameSite {
     Unspecified,
     None,
     Lax,
     Strict,
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CookieRecord {
     pub name: String,
     pub value: String,
@@ -24,6 +26,7 @@ pub struct CookieRecord {
     pub expires: Option<i64>,
     pub same_site: SameSite,
 }
+#[derive(Serialize)]
 pub struct CookieExport {
     pub cookies: Vec<CookieRecord>,
     pub expired: usize,
@@ -99,6 +102,7 @@ pub fn parse_export(bytes: &[u8], now: i64) -> Result<CookieExport, String> {
                 .any(|c| c <= 32 || c >= 127 || b"()<>@,;:\\\"/[]?={}".contains(&c))
             || row.value.bytes().any(|c| c < 32 || c == 127 || c == b';')
             || !row.path.starts_with('/')
+            || row.path.contains(';')
             || row.path.chars().any(char::is_control)
             || row.name.len() + row.value.len() + row.domain.len() + row.path.len() > 4096
         {
@@ -125,6 +129,14 @@ pub fn parse_export(bytes: &[u8], now: i64) -> Result<CookieExport, String> {
         }
         let host = address.host_str().unwrap().to_owned();
         let host_only = row.host_only.unwrap_or(!row.domain.starts_with('.'));
+        if !host_only
+            && (host.ends_with('.')
+                || host.parse::<std::net::IpAddr>().is_ok()
+                || host.starts_with('[')
+                || psl::domain_str(&host).is_none())
+        {
+            return Err("A domain cookie has an invalid or public suffix scope.".into());
+        }
         let same_site = match row.same_site.as_deref().unwrap_or("unspecified") {
             "unspecified" => SameSite::Unspecified,
             "none" | "no_restriction" => SameSite::None,

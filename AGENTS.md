@@ -1,6 +1,6 @@
 # Working on Sisu for macOS
 
-Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.3 is an engineering alpha.
+Read README.md and docs/checkpoint.md first. The Windows implementation lives at https://github.com/gurusciuc/sisu. This repository is the native AppKit/system-WebKit Mac implementation with Rust tab/address policy and content-rule conversion. Version 0.1.0-alpha.4 is an engineering alpha.
 
 The user authorizes separate platform engines and installers. Direct Chrome Web Store installation is now required for the next Mac foundation. Compare memory among candidates that meet the extension requirement and keep the working WebKit preview available during the evaluation. Keep one engine per session. Do not add an extra web runtime for controls, an AI sidebar, cloud sync or a marketing website.
 

@@ -19,6 +19,10 @@ fn refuses_scope_loss_and_invalid_values_before_writes() {
         r#"[{"name":"session","value":"x;injected=y","domain":"example.test"}]"#,
         r#"[{"name":"session","value":"x","domain":"example.test/path"}]"#,
         r#"[{"name":"session","value":"x","domain":"..example.test"}]"#,
+        r#"[{"name":"session","value":"x","domain":".com"}]"#,
+        r#"[{"name":"session","value":"x","domain":".github.io"}]"#,
+        r#"[{"name":"session","value":"x","domain":".127.0.0.1"}]"#,
+        r#"[{"name":"session","value":"x","domain":"example.test","path":"/; Path=/"}]"#,
         r#"[{"name":"session","value":"x","domain":"example.test"},{"name":"session","value":"y","domain":"example.test"}]"#,
     ] {
         assert!(parse_export(data.as_bytes(), 100).is_err());

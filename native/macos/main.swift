@@ -41,6 +41,7 @@ import WebKit
     @objc func back(){active?.back()}
     @objc func forward(){active?.forward()}
     @objc func settings(){active?.openSettings()}
+    @objc func importCookies(){active?.importCookies()}
     @objc func toggleTabs(){active?.togglePlacement()}
     @objc func zoomIn(){active?.zoomIn()}
     @objc func zoomOut(){active?.zoomOut()}
@@ -56,7 +57,7 @@ import WebKit
         app.addItem(.separator());add(app,"Hide Sisu",#selector(NSApplication.hide(_:)),"h",.command,NSApp)
         add(app,"Hide Others",#selector(NSApplication.hideOtherApplications(_:)),"h",[.command,.option],NSApp)
         app.addItem(.separator());add(app,"Quit Sisu",#selector(NSApplication.terminate(_:)),"q",.command,NSApp)
-        let file=menu("File");add(file,"New Tab",#selector(newTab),"t");add(file,"New Window",#selector(newWindow),"n");add(file,"New Private Window",#selector(newPrivateWindow),"n",[.command,.shift]);file.addItem(.separator());add(file,"Close Tab",#selector(closeTab),"w")
+        let file=menu("File");add(file,"New Tab",#selector(newTab),"t");add(file,"New Window",#selector(newWindow),"n");add(file,"New Private Window",#selector(newPrivateWindow),"n",[.command,.shift]);file.addItem(.separator());add(file,"Close Tab",#selector(closeTab),"w");file.addItem(.separator());add(file,"Import Cookies…",#selector(importCookies),"")
         let edit=menu("Edit")
         for (title,selector,key) in [("Undo",Selector(("undo:")),"z"),("Redo",Selector(("redo:")),"Z"),("Cut",#selector(NSText.cut(_:)),"x"),("Copy",#selector(NSText.copy(_:)),"c"),("Paste",#selector(NSText.paste(_:)),"v"),("Select All",#selector(NSText.selectAll(_:)),"a")] {
             let entry=NSMenuItem(title:title,action:selector,keyEquivalent:key);entry.target=nil;edit.addItem(entry)

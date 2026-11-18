@@ -168,6 +168,13 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         }
         widthField.font=NSFont(name:"Arial",size:14);widthField.alignment = .center;widthField.stringValue=String(controller.profile.preferences.sidebarWidth);widthField.target=self;widthField.action = #selector(applyWidth);widthField.setAccessibilityLabel("Sidebar width in pixels");content.addSubview(widthField)
         label("note","Reload open pages after changing blocking.",14)
+        if !controller.profile.isPrivate {
+            label("import", "Browser data")
+            let button = ChromeButton(title: "Import cookies…", target: controller, action: #selector(BrowserWindow.importCookies))
+            button.outlined = true
+            choices[11] = button
+            content.addSubview(button)
+        }
         label("version","Sisu \(Bundle.main.object(forInfoDictionaryKey:"SisuVersion") as? String ?? "alpha") · Apache 2.0",13,true)
         refreshChoices()
     }
@@ -184,7 +191,14 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         group("appearance");row("theme",0,1);row("tabs",2,3)
         elements["width"]?.frame=NSRect(x:x,y:y+7,width:stacked ? width:width/2-8,height:24);if stacked{y += 25};let right=stacked ? x:x+width/2;widthField.frame=NSRect(x:right,y:y,width:100,height:33);choices[8]?.frame=NSRect(x:right+108,y:y,width:86,height:33);y += 55
         group("browsing");row("provider",4,5);y += 14
-        group("privacy");row("blocking",6,7);place("note",24);y += 16;row("tools",9,10);y += 20;place("version",24)
+        group("privacy");row("blocking",6,7);place("note",24);y += 16
+        if let importButton = choices[11] {
+            elements["import"]?.frame = NSRect(x: x, y: y+7, width: width/2-8, height: 24)
+            if stacked { y += 25 }
+            importButton.frame = NSRect(x: right, y: y, width: stacked ? width : width/2, height: 33)
+            y += 41
+        }
+        row("tools",9,10);y += 20;place("version",24)
         content.frame=NSRect(x:0,y:0,width:bounds.width,height:max(bounds.height,y+28))
     }
     @objc private func applyWidth(){guard let controller else{return};guard let width=Int(widthField.stringValue),(92...350).contains(width) else{NSSound.beep();widthField.stringValue=String(controller.profile.preferences.sidebarWidth);return};controller.setSidebarWidth(width)}

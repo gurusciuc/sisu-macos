@@ -34,6 +34,7 @@ import WebKit
         select.alignment = .left; select.font = NSFont(name: "Arial", size: 13); select.hoverEnabled = false
         select.lineBreakMode = .byTruncatingTail
         close.setAccessibilityLabel("Close tab"); close.toolTip = "Close tab"
+        close.isHidden = true
         icon.image = chromeImage(.page); icon.imageScaling = .scaleNone
         addSubview(icon); addSubview(select); addSubview(close)
         onSelect = { [weak target] in target?.select(id) }
@@ -352,6 +353,9 @@ import WebKit
     }
     @objc private func openOtherWindow() { (NSApp.delegate as? AppDelegate)?.newWindow() }
     @objc private func openPrivateWindow() { (NSApp.delegate as? AppDelegate)?.newPrivateWindow() }
+    @objc func importCookies() {
+        if let window { CookieImporter.choose(in: window, profile: profile) }
+    }
     @objc private func showAbout() { (NSApp.delegate as? AppDelegate)?.about() }
     private func applyTheme() {
         window?.appearance = profile.preferences.theme == "system" ? nil : NSAppearance(named: profile.preferences.theme == "dark" ? .darkAqua : .aqua)
