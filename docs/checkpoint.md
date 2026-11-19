@@ -2,6 +2,12 @@
 
 Version **0.1.0-alpha.7** packages the latest WebKit build as `Sisu.app`. Its existing bundle identifier and profile location carry over. The Mac build uses AppKit controls, system WebKit and the Rust tab and address model. The Windows implementation lives in [gurusciuc/sisu](https://github.com/gurusciuc/sisu).
 
+## Unreleased changes · 19 November 2026
+
+`tools/build-macos.sh` passed with a fresh output directory: formatting, all nine Rust tests, the Swift build, strict signature verification and image verification. `tools/native-check.mjs` passed all seven checks across five launches against the packaged app. A test-profile run closed the only tab, then a Settings tab and a new tab. Each time Sisu kept the window and opened a new tab page.
+
+The dithered wallpaper renders a 368 × 193 cell field in about 1 ms per frame on Apple Silicon, about 2% of one core at its 20 fps cap. It pauses when the page is hidden, the window is occluded or Sisu is not the active app. Offscreen renders checked both themes at 1200 and 760 points. Live animation in an on-screen window was not captured because the test host lacks screen-recording permission. JavaScript and Lockdown Mode now apply per navigation. Sisu never turns off a system-wide Lockdown Mode. Choosing Deny for camera and microphone stops active capture in open tabs.
+
 ## Verified on Apple Silicon
 
 In alpha.6, a native AppKit check sampled the left edge, middle and right edge of pressed tabs in both themes. All three positions had the same fill, the corners stayed rounded and releasing the button restored its prior appearance. The check exercised selected and unselected tabs in the top bar and the narrowest sidebar. Hit-testing routed the icon, title and padding to tab selection and the visible close button to its own action.

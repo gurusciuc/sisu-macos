@@ -66,8 +66,11 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     required init?(coder:NSCoder){fatalError()}
     override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     override func updateTrackingAreas(){super.updateTrackingAreas();if let tracking{removeTrackingArea(tracking)};tracking=NSTrackingArea(rect:bounds,options:[.mouseEnteredAndExited,.activeInKeyWindow,.inVisibleRect],owner:self,userInfo:nil);addTrackingArea(tracking!)}
-    override func mouseEntered(with event: NSEvent) { if hoverEnabled { setHoverAmount(1) } }
+    override func mouseEntered(with event: NSEvent) { if hoverEnabled && isEnabled { setHoverAmount(1) } }
     override func mouseExited(with event: NSEvent) { if hoverEnabled { setHoverAmount(0) } }
+    override var isEnabled: Bool {
+        didSet { if oldValue != isEnabled { if !isEnabled { hoverFade?.stop(); hoverAmount = 0 }; needsDisplay = true } }
+    }
     override func viewDidHide() {
         super.viewDidHide()
         hoverFade?.stop()
@@ -101,13 +104,35 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
         if selectedStyle{Palette.text(self).setFill();shape.fill()}
         else {
             if outlined { Palette.address(self).setFill(); shape.fill() }
-            if isHighlighted || hoverAmount > 0 {
+            if isEnabled && (isHighlighted || hoverAmount > 0) {
                 Palette.hover(self).withAlphaComponent(isHighlighted ? 1 : hoverAmount).setFill()
                 shape.fill()
             }
         }
         if outlined{Palette.line(self).setStroke();shape.lineWidth=1;shape.stroke()}
+        if let image, !title.isEmpty, imagePosition == .imageLeading { drawCentered(image); return }
         super.draw(dirtyRect)
+    }
+    /// NSButtonCell pins a leading image to the edge and centres the title in what
+    /// is left, so short titles get uneven padding. Centre icon and title as one group.
+    private func drawCentered(_ image: NSImage) {
+        let ink = (selectedStyle ? Palette.background(self) : Palette.text(self)).withAlphaComponent(isEnabled ? 1 : 0.45)
+        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
+        let label = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 14), .foregroundColor: ink, .paragraphStyle: paragraph])
+        // Centre what is visible: chrome symbols start 2.4 pt into their image, and
+        // the title's advance includes trailing side bearing.
+        let inset: CGFloat = 2.4, gap: CGFloat = 4, textSize = label.size()
+        let textWidth = min(ceil(textSize.width), max(0, bounds.width - 20 - image.size.width - gap))
+        let visibleText = min(textWidth, label.boundingRect(with: textSize, options: [.usesLineFragmentOrigin, .usesDeviceMetrics]).maxX)
+        var x = (((bounds.width - (image.size.width - inset + gap + visibleText)) / 2 - inset) * 2).rounded() / 2
+        let tinted = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect); ink.set(); rect.fill(using: .sourceAtop); return true
+        }
+        tinted.draw(in: NSRect(x: x, y: ((bounds.height - image.size.height) / 2).rounded(), width: image.size.width, height: image.size.height),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        x += image.size.width + gap
+        label.draw(with: NSRect(x: x, y: ((bounds.height - textSize.height) / 2).rounded(), width: textWidth, height: ceil(textSize.height)),
+                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }
 
@@ -176,81 +201,3 @@ enum ChromeSymbol: Sendable { case back, forward, reload, plus, close, placement
     }
 }
 
-@MainActor final class SettingsView: Surface {
-    weak var controller:BrowserWindow?
-    private let scroll=NSScrollView()
-    private let content=Surface()
-    private var elements:[String:NSView]=[:]
-    private var choices:[Int:ChromeButton]=[:]
-    private let widthField=RoundedField()
-    init(controller:BrowserWindow){
-        self.controller=controller;super.init(frame:.zero)
-        scroll.documentView=content;scroll.drawsBackground=false;scroll.hasVerticalScroller=true;scroll.autohidesScrollers=true;addSubview(scroll)
-        func label(_ key:String,_ text:String,_ size:CGFloat=14,_ muted:Bool=false){let field=NSTextField(labelWithString:text);field.font=NSFont(name:"Arial",size:size);field.textColor=muted ? .secondaryLabelColor:.labelColor;content.addSubview(field);elements[key]=field}
-        label("title","Settings",37)
-        label("profile",controller.profile.isPrivate ? "Changes last for this private window.":"Preferences for this profile",14,true)
-        for (key,text) in [("appearance","Appearance"),("browsing","Browsing"),("privacy","Privacy and data")]{label(key,text,14,true)}
-        for (key,text) in [("theme","Color mode"),("tabs","Tab placement"),("width","Sidebar width (92–350 px)"),("provider","Search engine"),("blocking","Native blocking"),("tools","Browser tools")]{label(key,text)}
-        for (tag,title) in [(0,"Dark"),(1,"Light"),(2,"Top"),(3,"Left"),(4,"DuckDuckGo"),(5,"Google"),(6,"On"),(7,"Off"),(8,"Apply"),(9,"New private window"),(10,"About Sisu")]{
-            let button=ChromeButton(title:title,target:self,action:#selector(change(_:)));button.tag=tag;button.outlined=true;choices[tag]=button;content.addSubview(button)
-        }
-        widthField.font=NSFont(name:"Arial",size:14);widthField.alignment = .center;widthField.stringValue=String(controller.profile.preferences.sidebarWidth);widthField.target=self;widthField.action = #selector(applyWidth);widthField.setAccessibilityLabel("Sidebar width in pixels");content.addSubview(widthField)
-        label("note","Reload open pages after changing blocking.",14)
-        if !controller.profile.isPrivate {
-            label("import", "Browser data")
-            let button = ChromeButton(title: "Import cookies…", target: controller, action: #selector(BrowserWindow.importCookies))
-            button.outlined = true
-            choices[11] = button
-            content.addSubview(button)
-        }
-        label("extensions","Extensions")
-        let extensions = ChromeButton(title:"Manage Extensions…",target:controller,action:#selector(BrowserWindow.manageExtensions))
-        extensions.outlined = true; choices[12] = extensions; content.addSubview(extensions)
-        label("version","Sisu \(Bundle.main.object(forInfoDictionaryKey:"SisuVersion") as? String ?? "alpha") · Apache 2.0",13,true)
-        refreshChoices()
-    }
-    required init?(coder:NSCoder){fatalError()}
-    private func refreshChoices(){guard let p=controller?.profile.preferences else{return};for (tag,button) in choices{button.selectedStyle = (tag==0 && p.theme=="dark") || (tag==1 && p.theme=="light") || (tag==2 && p.placement=="top") || (tag==3 && p.placement=="left") || (tag==4 && !p.google) || (tag==5 && p.google) || (tag==6 && p.blocking) || (tag==7 && !p.blocking)}}
-    override func layout(){
-        super.layout();scroll.frame=bounds
-        let width=min(720,max(180,bounds.width-48)),x=(bounds.width-width)/2,stacked=width<520
-        var y:CGFloat=28
-        func place(_ key:String,_ h:CGFloat){elements[key]?.frame=NSRect(x:x,y:y,width:width,height:h);y += h}
-        func group(_ key:String){place(key,24);y += 8}
-        func row(_ label:String,_ a:Int,_ b:Int){let right=stacked ? x:x+width/2,rw=stacked ? width:width/2;elements[label]?.frame=NSRect(x:x,y:y+7,width:stacked ? width:width/2-8,height:24);if stacked{y += 25};choices[a]?.frame=NSRect(x:right,y:y,width:(rw-8)/2,height:33);choices[b]?.frame=NSRect(x:right+(rw+8)/2,y:y,width:(rw-8)/2,height:33);y += 41}
-        place("title",48);y += 3;place("profile",25);y += 22
-        group("appearance");row("theme",0,1);row("tabs",2,3)
-        elements["width"]?.frame=NSRect(x:x,y:y+7,width:stacked ? width:width/2-8,height:24);if stacked{y += 25};let right=stacked ? x:x+width/2;widthField.frame=NSRect(x:right,y:y,width:100,height:33);choices[8]?.frame=NSRect(x:right+108,y:y,width:86,height:33);y += 55
-        group("browsing");row("provider",4,5);y += 14
-        group("privacy");row("blocking",6,7);place("note",24);y += 16
-        if let importButton = choices[11] {
-            elements["import"]?.frame = NSRect(x: x, y: y+7, width: width/2-8, height: 24)
-            if stacked { y += 25 }
-            importButton.frame = NSRect(x: right, y: y, width: stacked ? width : width/2, height: 33)
-            y += 41
-        }
-        if let extensions = choices[12] {
-            elements["extensions"]?.frame = NSRect(x:x,y:y+7,width:stacked ? width : width/2-8,height:24)
-            if stacked { y += 25 }
-            extensions.frame = NSRect(x:stacked ? x:x+width/2,y:y,width:stacked ? width:width/2,height:33)
-            y += 41
-        }
-        row("tools",9,10);y += 20;place("version",24)
-        content.frame=NSRect(x:0,y:0,width:bounds.width,height:max(bounds.height,y+28))
-    }
-    @objc private func applyWidth(){guard let controller else{return};guard let width=Int(widthField.stringValue),(92...350).contains(width) else{NSSound.beep();widthField.stringValue=String(controller.profile.preferences.sidebarWidth);return};controller.setSidebarWidth(width)}
-    @objc private func change(_ sender:NSButton){guard let controller else{return};switch sender.tag {
-        case 0:controller.setTheme("dark")
-        case 1:controller.setTheme("light")
-        case 2:controller.setPlacement("top")
-        case 3:controller.setPlacement("left")
-        case 4:controller.setProvider(false)
-        case 5:controller.setProvider(true)
-        case 6:controller.setBlocking(true)
-        case 7:controller.setBlocking(false)
-        case 8:applyWidth()
-        case 9:(NSApp.delegate as? AppDelegate)?.newPrivateWindow()
-        default:(NSApp.delegate as? AppDelegate)?.about()
-        };refreshChoices()
-    }
-}

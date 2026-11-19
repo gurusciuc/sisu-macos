@@ -121,6 +121,7 @@ import WebKit
     private let headerWordmark = NSTextField(labelWithString: "sisu")
     private var frameObservers: [NSObjectProtocol] = []
     private var downloads: [ObjectIdentifier: WKDownload] = [:]
+    private var downloadDestinations: [ObjectIdentifier: URL] = [:]
     private var allowWindowClose = false
     var current: BrowserTab? { core.selected.flatMap { tabs[$0] } }
 
@@ -217,8 +218,7 @@ import WebKit
         if #available(macOS 15.4,*), supplied == nil {
             config.webExtensionController = ExtensionLibrary.library(for:profile)?.controller
         }
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
-        config.preferences.isElementFullscreenEnabled = true
+        WebSettings.configure(config, profile.preferences, supplied: supplied != nil)
         let user = config.userContentController
         if supplied == nil {
         if profile.preferences.blocking, let rules = Blocker.shared.ruleList { user.add(rules) }
@@ -232,8 +232,8 @@ import WebKit
         }
         let web = WKWebView(frame: pages.bounds, configuration: config)
         web.navigationDelegate = self; web.uiDelegate = self
-        web.allowsBackForwardNavigationGestures = true
         web.isInspectable = false
+        WebSettings.apply(web, profile.preferences, zoom: true)
         tab.web = web; pages.addSubview(web)
         for path in [\WKWebView.title, \WKWebView.url] as [PartialKeyPath<WKWebView>] {
             if path == \WKWebView.title { tab.observations.append(web.observe(\.title, options: [.new]) { [weak self, weak tab] web, _ in
@@ -391,12 +391,73 @@ import WebKit
         if let id = core.selected { revealTab(id) }
     }
     func setTheme(_ value: String) { profile.preferences.theme = value; savePreferences(); applyTheme() }
+    /// Changes preferences, saves them and pushes the live options to every open tab.
+    func update(zoom: Bool = false, _ change: (inout Preferences) -> Void) {
+        let previous = profile.preferences
+        change(&profile.preferences)
+        applyLive(from: previous, zoom: zoom)
+        savePreferences()
+    }
+    /// Another window of the same profile saved new preferences.
+    func adopt(_ preferences: Preferences) {
+        let previous = profile.preferences
+        profile.preferences = preferences
+        if previous.blocking != preferences.blocking { setBlocking(preferences.blocking, save: false) }
+        applyLive(from: previous, zoom: previous.pageZoom != preferences.pageZoom)
+        for tab in tabs.values {
+            (tab.native as? NewTabView)?.updateProvider()
+            (tab.native as? SettingsView)?.refreshChoices()
+        }
+        applyTheme(); layout(); refreshBlocking()
+    }
+    private func applyLive(from previous: Preferences, zoom: Bool) {
+        let p = profile.preferences
+        for web in tabs.values.compactMap(\.web) {
+            WebSettings.apply(web, p, zoom: zoom)
+            if previous.inspector, !p.inspector { web.isInspectable = false }
+            // A page may already hold a grant; stop live capture when access is denied.
+            if previous.camera != "deny", p.camera == "deny" {
+                web.setCameraCaptureState(.none); web.setMicrophoneCaptureState(.none)
+            }
+        }
+    }
+    @objc func clearCache() {
+        let types: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeFetchCache, WKWebsiteDataTypeOfflineWebApplicationCache]
+        profile.store.removeData(ofTypes: types, modifiedSince: .distantPast) { [weak self] in
+            self?.showNotice("Cache cleared", "Pages will load fresh copies from the network.")
+        }
+    }
+    @objc func clearWebsiteData() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Clear all website data?"
+        alert.informativeText = "Cookies, caches, local storage and other website data for this profile will be removed. You will be signed out of websites. This can’t be undone."
+        alert.addButton(withTitle: "Clear All Data"); alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            self.profile.store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
+                self?.showNotice("Website data cleared", "Reload open pages to start fresh.")
+            }
+        }
+    }
+    @objc func printPage() {
+        guard let web = current?.web, let window else { NSSound.beep(); return }
+        let operation = web.printOperation(with: NSPrintInfo.shared)
+        operation.view?.frame = web.bounds
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+    private func showNotice(_ title: String, _ text: String) {
+        guard let window, window.attachedSheet == nil else { return }
+        let alert = NSAlert(); alert.messageText = title; alert.informativeText = text
+        alert.addButton(withTitle: "OK"); alert.beginSheetModal(for: window)
+    }
     func setSidebarWidth(_ value: Int) { profile.preferences.sidebarWidth=min(350,max(92,value));savePreferences();layout() }
     func setProvider(_ google: Bool) {
         profile.preferences.google=google;savePreferences()
         for tab in tabs.values { (tab.native as? NewTabView)?.updateProvider() }
     }
-    func setBlocking(_ enabled: Bool) {
+    func setBlocking(_ enabled: Bool, save: Bool = true) {
         profile.preferences.blocking=enabled
         for tab in tabs.values {
             if let user=tab.web?.configuration.userContentController {
@@ -404,12 +465,14 @@ import WebKit
                 if enabled,let list=Blocker.shared.ruleList { user.add(list) }
             }
         }
-        savePreferences();refreshBlocking()
+        if save { savePreferences() }
+        refreshBlocking()
     }
     private func refreshBlocking() {
         guard blockingButton != nil else { return }
         blockingButton.title=current?.web == nil ? "Local page":(profile.preferences.blocking ? "Blocking on":"Blocking off")
         blockingButton.isEnabled=current?.web != nil
+        blockingButton.toolTip=current?.web == nil ? "Blocking applies to webpages, not Sisu’s own pages" : "Native blocking for this profile"
         blockingButton.setAccessibilityLabel(blockingButton.title)
     }
     @objc private func toggleBlocking() { setBlocking(!profile.preferences.blocking) }
@@ -435,7 +498,15 @@ import WebKit
         for tab in tabs.values { tab.native?.needsDisplay=true;tab.native?.needsLayout=true }
         refreshTitles()
     }
-    func savePreferences() { do { try profile.save() } catch { showError(error.localizedDescription) } }
+    func savePreferences() {
+        do { try profile.save() } catch { showError(error.localizedDescription) }
+        for tab in tabs.values { (tab.native as? SettingsView)?.refreshChoices() }
+        // Ordinary windows share one preferences file; keep their copies in step.
+        guard !profile.isPrivate else { return }
+        for other in (NSApp.delegate as? AppDelegate)?.windows ?? [] where other !== self && !other.profile.isPrivate {
+            other.adopt(profile.preferences)
+        }
+    }
 
     var editedTabCount: Int { tabs.values.filter(\.edited).count }
 
@@ -449,8 +520,13 @@ import WebKit
         tabs.removeValue(forKey: id)
         _ = core.call(["op": "close", "id": id])
         if core.ids.isEmpty {
-            allowWindowClose = true
-            window?.close()
+            if profile.preferences.lastTab == "closeWindow" {
+                allowWindowClose = true
+                window?.close()
+            } else {
+                // Keep the browser open: the last closed tab becomes a fresh new tab page.
+                newTab()
+            }
         } else {
             if #available(macOS 15.4,*), let current, previous !== current {
                 ExtensionLibrary.library(for:profile)?.controller.didActivateTab(current,previousActiveTab:previous)
@@ -525,6 +601,7 @@ import WebKit
                 preferences.preferredHTTPSNavigationPolicy = .errorOnFailure
             }
         }
+        WebSettings.navigation(preferences, profile.preferences)
         decisionHandler(action.shouldPerformDownload ? .download : .allow, preferences)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -586,20 +663,40 @@ import WebKit
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = parameters.allowsMultipleSelection; panel.canChooseDirectories = parameters.allowsDirectories
         panel.beginSheetModal(for: window!) { response in completionHandler(response == .OK ? panel.urls : nil) }
     }
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) { decisionHandler(profile.isPrivate ? .deny : .prompt) }
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) { decisionHandler(profile.isPrivate || profile.preferences.camera == "deny" ? .deny : .prompt) }
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { register(download) }
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { register(download) }
     private func register(_ download: WKDownload) { downloads[ObjectIdentifier(download)] = download; download.delegate = self }
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = URL(fileURLWithPath: suggestedFilename).lastPathComponent
+        var name = URL(fileURLWithPath: suggestedFilename).lastPathComponent
+        if name.isEmpty || name == "/" || name.hasPrefix(".") { name = "download" + name }
+        if profile.preferences.downloads == "downloads",
+           let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+            var destination = folder.appendingPathComponent(name), copy = 2
+            while FileManager.default.fileExists(atPath: destination.path) || downloadDestinations.values.contains(destination) {
+                destination = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(copy)" : "\(base) \(copy).\(ext)"); copy += 1
+            }
+            downloadDestinations[ObjectIdentifier(download)] = destination
+            completionHandler(destination); return
+        }
+        let panel = NSSavePanel(); panel.nameFieldStringValue = name
         panel.beginSheetModal(for: window!) { answer in
             let destination = answer == .OK ? panel.url : nil
             if destination == nil { self.downloads.removeValue(forKey: ObjectIdentifier(download)) }
             completionHandler(destination)
         }
     }
-    func downloadDidFinish(_ download: WKDownload) { downloads.removeValue(forKey: ObjectIdentifier(download)) }
+    func downloadDidFinish(_ download: WKDownload) {
+        downloads.removeValue(forKey: ObjectIdentifier(download))
+        // Bounce the Dock's Downloads stack for files saved without a panel. The
+        // notification is visible to other apps, so private windows never post it.
+        if let file = downloadDestinations.removeValue(forKey: ObjectIdentifier(download)), !profile.isPrivate {
+            DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: file.path)
+        }
+    }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
         guard downloads.removeValue(forKey: ObjectIdentifier(download)) != nil else { return }
         if !isCancellation(error as NSError) { showError(error.localizedDescription) }
     }

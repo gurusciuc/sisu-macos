@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Redraw the Inner Citadel new-tab wallpaper as animated ordered-dither pixels. A light travels round the ring and the outer contours turn slowly. Animation runs only while the page is visible in the active app; Reduce Motion shows a still frame.
+- Closing the last tab opens a new tab page instead of closing the window. Settings can restore the old behaviour. Add File → Close Window (⇧⌘W) and File → Print… (⌘P).
+- Expand Settings with the public WebKit options: page zoom, minimum font size, pop-ups, JavaScript, full screen, text selection, site compatibility fixes, incremental rendering, print backgrounds, swipe, pinch zoom, Force Click previews, Tab-key links, autoplay, AirPlay, camera and microphone, inline predictions, fraudulent website warning, Lockdown Mode, Web Inspector, a custom user agent, downloads to ~/Downloads, and clearing cache or website data. Ordinary windows share changes immediately.
+- Centre the icon and title of the blocking button so its padding is equal, and stop disabled buttons showing hover.
+
 ## 0.1.0-alpha.7 · 18 November 2026
 
 - Lift the dark browser chrome and new-tab background to charcoal.

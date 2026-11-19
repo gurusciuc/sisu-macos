@@ -31,15 +31,121 @@ struct Preferences: Codable {
     var google = false
     var blocking = true
     var sidebarWidth = 216
-    enum CodingKeys: String, CodingKey { case placement,theme,google,blocking,sidebarWidth }
+    // Tabs and windows
+    var lastTab = "newTab"            // newTab · closeWindow
+    var downloads = "ask"             // ask · downloads
+    // Web content (public WebKit API only)
+    var javaScript = true
+    var blockPopups = true
+    var pageZoom = 100
+    var minimumFontSize = 0
+    var fullscreen = true
+    var textInteraction = true
+    var siteQuirks = true
+    var tabFocusesLinks = false
+    var printBackgrounds = false
+    var incrementalRendering = true
+    // Input and gestures
+    var swipeNavigation = true
+    var pinchZoom = false
+    var linkPreview = true
+    var inlinePredictions = false
+    // Media
+    var autoplay = "allow"            // allow · audio · none
+    var airPlay = true
+    var camera = "ask"                // ask · deny
+    // Privacy and security
+    var fraudWarning = true
+    var lockdown = false
+    // Developer
+    var inspector = false
+    var userAgent = ""
+
+    enum CodingKeys: String, CodingKey {
+        case placement,theme,google,blocking,sidebarWidth,lastTab,downloads
+        case javaScript,blockPopups,pageZoom,minimumFontSize,fullscreen,textInteraction,siteQuirks,tabFocusesLinks,printBackgrounds,incrementalRendering
+        case swipeNavigation,pinchZoom,linkPreview,inlinePredictions
+        case autoplay,airPlay,camera,fraudWarning,lockdown,inspector,userAgent
+    }
     init() {}
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        placement = try values.decodeIfPresent(String.self, forKey: .placement) ?? "top"
-        theme = try values.decodeIfPresent(String.self, forKey: .theme) ?? "dark"
-        google = try values.decodeIfPresent(Bool.self, forKey: .google) ?? false
-        blocking = try values.decodeIfPresent(Bool.self, forKey: .blocking) ?? true
-        sidebarWidth = min(350,max(92,try values.decodeIfPresent(Int.self, forKey: .sidebarWidth) ?? 216))
+        let defaults = Preferences()
+        // A malformed entry falls back to its default instead of losing the whole profile.
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T { (try? values.decodeIfPresent(T.self, forKey: key)) ?? fallback }
+        func choice(_ key: CodingKeys, _ fallback: String, _ allowed: [String]) -> String { let v: String = value(key, fallback); return allowed.contains(v) ? v : fallback }
+        placement = choice(.placement, "top", ["top","left"])
+        theme = choice(.theme, "dark", ["dark","light","system"])
+        google = value(.google, false)
+        blocking = value(.blocking, true)
+        sidebarWidth = min(350,max(92,value(.sidebarWidth, 216)))
+        lastTab = choice(.lastTab, defaults.lastTab, ["newTab","closeWindow"])
+        downloads = choice(.downloads, defaults.downloads, ["ask","downloads"])
+        javaScript = value(.javaScript, defaults.javaScript)
+        blockPopups = value(.blockPopups, defaults.blockPopups)
+        pageZoom = min(300,max(50,value(.pageZoom, defaults.pageZoom)))
+        minimumFontSize = min(72,max(0,value(.minimumFontSize, defaults.minimumFontSize)))
+        fullscreen = value(.fullscreen, defaults.fullscreen)
+        textInteraction = value(.textInteraction, defaults.textInteraction)
+        siteQuirks = value(.siteQuirks, defaults.siteQuirks)
+        tabFocusesLinks = value(.tabFocusesLinks, defaults.tabFocusesLinks)
+        printBackgrounds = value(.printBackgrounds, defaults.printBackgrounds)
+        incrementalRendering = value(.incrementalRendering, defaults.incrementalRendering)
+        swipeNavigation = value(.swipeNavigation, defaults.swipeNavigation)
+        pinchZoom = value(.pinchZoom, defaults.pinchZoom)
+        linkPreview = value(.linkPreview, defaults.linkPreview)
+        inlinePredictions = value(.inlinePredictions, defaults.inlinePredictions)
+        autoplay = choice(.autoplay, defaults.autoplay, ["allow","audio","none"])
+        airPlay = value(.airPlay, defaults.airPlay)
+        camera = choice(.camera, defaults.camera, ["ask","deny"])
+        fraudWarning = value(.fraudWarning, defaults.fraudWarning)
+        lockdown = value(.lockdown, defaults.lockdown)
+        inspector = value(.inspector, defaults.inspector)
+        userAgent = String(value(.userAgent, defaults.userAgent).prefix(512))
+    }
+}
+
+/// Maps profile preferences onto public WebKit API. Creation-time options apply
+/// to tabs opened afterwards; live options are pushed to every open tab.
+@MainActor enum WebSettings {
+    static func configure(_ config: WKWebViewConfiguration, _ p: Preferences, supplied: Bool) {
+        apply(config.preferences, p)
+        // A popup configuration from WebKit already carries its opener's options.
+        guard !supplied else { return }
+        config.suppressesIncrementalRendering = !p.incrementalRendering
+        config.allowsAirPlayForMediaPlayback = p.airPlay
+        config.mediaTypesRequiringUserActionForPlayback = p.autoplay == "none" ? .all : p.autoplay == "audio" ? .audio : []
+        config.allowsInlinePredictions = p.inlinePredictions
+        // JavaScript and Lockdown Mode are decided per navigation (see `navigation`), so a
+        // later change takes effect on reload instead of sticking to the tab's defaults.
+    }
+    static func apply(_ prefs: WKPreferences, _ p: Preferences) {
+        prefs.javaScriptCanOpenWindowsAutomatically = !p.blockPopups
+        prefs.minimumFontSize = CGFloat(p.minimumFontSize)
+        prefs.isElementFullscreenEnabled = p.fullscreen
+        prefs.isTextInteractionEnabled = p.textInteraction
+        prefs.isSiteSpecificQuirksModeEnabled = p.siteQuirks
+        prefs.tabFocusesLinks = p.tabFocusesLinks
+        prefs.shouldPrintBackgrounds = p.printBackgrounds
+        prefs.isFraudulentWebsiteWarningEnabled = p.fraudWarning
+    }
+    static func apply(_ web: WKWebView, _ p: Preferences, zoom: Bool) {
+        apply(web.configuration.preferences, p)
+        web.allowsBackForwardNavigationGestures = p.swipeNavigation
+        web.allowsMagnification = p.pinchZoom
+        if !p.pinchZoom, web.magnification != 1 { web.magnification = 1 }
+        web.allowsLinkPreview = p.linkPreview
+        web.customUserAgent = p.userAgent.isEmpty ? nil : p.userAgent
+        if p.inspector { web.isInspectable = true }
+        if zoom { web.pageZoom = CGFloat(p.pageZoom) / 100 }
+    }
+    /// A fresh WKWebpagePreferences reports the system-wide Lockdown Mode state.
+    private static var systemLockdown: Bool { WKWebpagePreferences().isLockdownModeEnabled }
+    /// Per-navigation options, set both ways so turning an option off also applies.
+    /// Never weakens a system-wide Lockdown Mode.
+    static func navigation(_ page: WKWebpagePreferences, _ p: Preferences) {
+        page.allowsContentJavaScript = p.javaScript
+        page.isLockdownModeEnabled = p.lockdown || systemLockdown
     }
 }
 

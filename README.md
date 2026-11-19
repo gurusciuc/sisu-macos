@@ -33,7 +33,7 @@ The disk image targets the architecture of the Mac used to build it. It contains
 
 - Native top/left tabs, address/search, navigation, zoom, native new-tab view and Settings. One Rust tab model drives the same live content views.
 - **File → Import Site Shortcuts…** adds links from a chosen JSON file to the ordinary new-tab page.
-- The Inner Citadel wallpaper frames new tab search in both themes. Short transitions for dots, tabs and buttons respect macOS Reduce Motion.
+- The Inner Citadel wallpaper, drawn as animated dithered pixels, frames new tab search in both themes. Short transitions for dots, tabs and buttons respect macOS Reduce Motion.
 - Persistent ordinary WebKit data stores and independent nonpersistent private stores. Private preferences remain in memory.
 - **Settings → Browser data → Import cookies…** accepts a JSON array or an object with a `cookies` array, in the same format as Sisu for Windows. Importing may replace matching cookies in the ordinary Sisu profile. Expired records are skipped. Files with partitioned cookies or attributes that cannot be represented are rejected before changes are made.
 - Compiled WebKit content rules exported from the hash-pinned EasyList/EasyPrivacy inputs. Conversion is partial; the bundled report records the counts and hash. Scriptlets and equivalent adblock-rust coverage are not promised.
